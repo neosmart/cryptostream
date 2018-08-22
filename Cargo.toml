@@ -1,0 +1,10 @@
+[package]
+name = "cryptostream"
+version = "0.1.0"
+authors = ["Mahmoud Al-Qudsi <mqudsi@neosmart.net>"]
+
+[dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
+
+[dev-dependencies]
+rand = "0.5"
