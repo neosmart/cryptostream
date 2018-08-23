@@ -1,8 +1,8 @@
 extern crate openssl;
 
-mod bufread;
-mod read;
-mod write;
+pub mod bufread;
+pub mod read;
+pub mod write;
 
 #[cfg(test)]
 mod tests;
