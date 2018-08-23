@@ -83,3 +83,61 @@ fn basic_write_encrypt() {
     assert_eq!(String::from_utf8(source.to_vec()).unwrap(), decrypted_msg);
 }
 
+#[test]
+fn basic_read_decrypt() {
+    let source = TEST;
+    let key: [u8; 128 / 8] = rand::random();
+    let iv: [u8; 128 / 8] = rand::random();
+    let cipher = Cipher::aes_128_cbc();
+    let mut crypter = Crypter::new(cipher, Mode::Encrypt, &key, Some(&iv)).unwrap();
+
+    let mut encrypted = [0u8; 1024];
+    let mut bytes_written = crypter.update(TEST, &mut encrypted).unwrap();
+    bytes_written += crypter.finalize(&mut encrypted[bytes_written..]).unwrap();
+
+    let encrypted = &encrypted[0..bytes_written]; // reframe
+    let mut decrypted = [0u8; 1024];
+    let mut bytes_decrypted = 0;
+
+    {
+        let mut decryptor = read::Decryptor::new(encrypted, cipher, &key, &iv).unwrap();
+
+        while bytes_decrypted < source.len() {
+            let decrypt_bytes = decryptor.read(&mut decrypted[bytes_decrypted..]).unwrap();
+            bytes_decrypted += decrypt_bytes;
+        }
+        eprintln!("Decrypted a total of {} bytes", bytes_decrypted);
+    }
+
+    let decrypted = &decrypted[0..bytes_decrypted]; // reframe
+    assert_eq!(&decrypted, &TEST);
+}
+
+#[test]
+fn basic_write_decrypt() {
+    let source = TEST;
+    let key: [u8; 128 / 8] = rand::random();
+    let iv: [u8; 128 / 8] = rand::random();
+    let cipher = Cipher::aes_128_cbc();
+    let mut cryptor = Crypter::new(cipher, Mode::Encrypt, &key, Some(&iv)).unwrap();
+
+    let mut encrypted = [0u8; 1024];
+    let mut bytes_written = cryptor.update(TEST, &mut encrypted).unwrap();
+    bytes_written += cryptor.finalize(&mut encrypted[bytes_written..]).unwrap();
+
+    let encrypted = &encrypted[0..bytes_written]; // reframe
+    let mut decrypted = Vec::new();
+    let mut bytes_decrypted = 0;
+
+    {
+        let mut decryptor = write::Decryptor::new(&mut decrypted, cipher, &key, &iv).unwrap();
+
+        while bytes_decrypted < source.len() {
+            let decrypt_bytes = decryptor.write(&encrypted[bytes_decrypted..]).unwrap();
+            bytes_decrypted += decrypt_bytes;
+        }
+        eprintln!("Decrypted a total of {} bytes", bytes_decrypted);
+    }
+
+    assert_eq!(&decrypted, &TEST);
+}
