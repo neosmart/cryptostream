@@ -24,24 +24,24 @@ impl<W: Write> Write for Cryptostream<W> {
 
         let mut bytes_encrypted = self.crypter.update(&buf, &mut buffer)
             .map_err(|e| Error::new(ErrorKind::Other, e))?;
-        eprintln!("Encrypted {} bytes written to cryptostream", bytes_encrypted);
+        // eprintln!("Encrypted {} bytes written to cryptostream", bytes_encrypted);
 
         if buf.len() < self.cipher.block_size() {
             self.finalized = true;
             let write_bytes = self.crypter.finalize(&mut buffer[bytes_encrypted..])
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            eprintln!("Encrypted {} bytes written to cryptostream", write_bytes);
+            // eprintln!("Encrypted {} bytes written to cryptostream", write_bytes);
             bytes_encrypted += write_bytes;
         };
 
         let mut bytes_written = 0;
         while bytes_written != bytes_encrypted {
             let write_bytes = self.writer.write(&buffer[bytes_written..bytes_encrypted])?;
-            eprintln!("Wrote {} bytes to underlying stream", write_bytes);
+            // eprintln!("Wrote {} bytes to underlying stream", write_bytes);
             bytes_written += write_bytes;
         }
 
-        eprintln!("Total bytes encrypted: {}", bytes_written);
+        // eprintln!("Total bytes encrypted: {}", bytes_written);
 
         // Regardless of how many bytes of encrypted ciphertext we wrote to the underlying stream
         // (taking padding into consideration) we return how many bytes of *input* were processed,
@@ -50,7 +50,7 @@ impl<W: Write> Write for Cryptostream<W> {
     }
 
     fn flush(&mut self) -> Result<(), Error> {
-        eprintln!("flush called");
+        // eprintln!("flush called");
 
         if !self.finalized {
             self.finalized = true;
@@ -58,7 +58,7 @@ impl<W: Write> Write for Cryptostream<W> {
             let mut buffer = [0u8; 16];
             let bytes_written = self.crypter.finalize(&mut buffer)
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            eprintln!("Flushed {} bytes to the underlying stream", bytes_written);
+            // eprintln!("Flushed {} bytes to the underlying stream", bytes_written);
             self.writer.write(&buffer[0..bytes_written])?;
         }
 
