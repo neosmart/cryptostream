@@ -7,4 +7,5 @@ authors = ["Mahmoud Al-Qudsi <mqudsi@neosmart.net>"]
 openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
+base64 = "0.9"
 rand = "0.5"
