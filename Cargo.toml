@@ -2,6 +2,7 @@
 name = "cryptostream"
 version = "0.1.0"
 authors = ["Mahmoud Al-Qudsi <mqudsi@neosmart.net>",
+        "Mark Swaanenburg <cygnus9@users.noreply.github.com>",
 		"NeoSmart Technologies <https://neosmart.net/>"]
 description = "Transparent encryption and decryption for Read and Write streams"
 homepage = "https://github.com/neosmart/cryptostream"
@@ -12,8 +13,12 @@ categories = ["cryptography"]
 license = "MIT"
 
 [dependencies]
-openssl = { version = "0.10", features = ["vendored"] }
+log = "0.4"
+openssl = "0.10"
 
 [dev-dependencies]
 base64 = "0.9"
 rand = "0.5"
+
+[features]
+openssl-vendored = ["openssl/vendored"]

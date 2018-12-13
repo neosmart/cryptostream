@@ -15,51 +15,44 @@ struct Cryptostream<W: Write> {
 }
 
 impl<W: Write> Write for Cryptostream<W> {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
+    fn write(&mut self, source_buffer: &[u8]) -> Result<usize, Error> {
         if self.finalized {
+            warn!("Attempt to write {} bytes to finalized cryptostream", source_buffer.len());
             return Ok(0);
         }
 
-        let mut buffer = [0u8; BUFFER_SIZE];
+        let block_size = self.cipher.block_size();
+        let mut sink_buffer = [0u8; BUFFER_SIZE];
 
-        let mut bytes_encrypted = self.crypter.update(&buf, &mut buffer)
+        // We can't write more than BUFFER_SIZE - block_size bytes.
+        let bytes_consumed = source_buffer.len().min(BUFFER_SIZE - block_size);
+
+        let bytes_produced = self.crypter.update(&source_buffer[..bytes_consumed],
+                                                 &mut sink_buffer)
             .map_err(|e| Error::new(ErrorKind::Other, e))?;
-        // eprintln!("Encrypted {} bytes written to cryptostream", bytes_encrypted);
+        trace!("Consumed {} bytes out of {} bytes written to cryptostream", bytes_consumed, source_buffer.len());
 
-        if buf.len() < self.cipher.block_size() {
-            self.finalized = true;
-            let write_bytes = self.crypter.finalize(&mut buffer[bytes_encrypted..])
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Encrypted {} bytes written to cryptostream", write_bytes);
-            bytes_encrypted += write_bytes;
-        };
-
-        let mut bytes_written = 0;
-        while bytes_written != bytes_encrypted {
-            let write_bytes = self.writer.write(&buffer[bytes_written..bytes_encrypted])?;
-            // eprintln!("Wrote {} bytes to underlying stream", write_bytes);
-            bytes_written += write_bytes;
-        }
-
-        // eprintln!("Total bytes encrypted: {}", bytes_written);
+        self.writer.write_all(&sink_buffer[..bytes_produced])?;
+        trace!("Wrote {} bytes to underlying stream", bytes_produced);
 
         // Regardless of how many bytes of encrypted ciphertext we wrote to the underlying stream
-        // (taking padding into consideration) we return how many bytes of *input* were processed,
-        // which can never be larger than the number of bytes passed in to us originally.
-        return Ok(buf.len());
+        // (taking padding into consideration) we return how many bytes of *input* were processed.
+        return Ok(bytes_consumed);
     }
 
     fn flush(&mut self) -> Result<(), Error> {
-        // eprintln!("flush called");
+        trace!("flush called");
 
         if !self.finalized {
             self.finalized = true;
 
-            let mut buffer = [0u8; 16];
-            let bytes_written = self.crypter.finalize(&mut buffer)
+            let mut sink_buffer = [0u8; 16];
+            let bytes_produced = self.crypter.finalize(&mut sink_buffer)
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Flushed {} bytes to the underlying stream", bytes_written);
-            self.writer.write(&buffer[0..bytes_written])?;
+            trace!("Flushed {} bytes to the underlying stream", bytes_produced);
+            self.writer.write_all(&sink_buffer[..bytes_produced])?;
+        } else {
+            warn!("Attempt to flush finalized cryptostream");
         }
 
         return Ok(());

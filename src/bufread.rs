@@ -5,16 +5,60 @@ use openssl::error::ErrorStack;
 use openssl::symm::{Cipher, Crypter, Mode};
 use std::io::{BufRead, Error, ErrorKind, Read};
 
-const BUFFER_SIZE: usize = 4096;
+const OVERFLOW_SIZE: usize = 64;
 
-struct Cryptostream<R: Read> {
+pub struct OverflowBuf {
+    buf: [u8; OVERFLOW_SIZE],
+    start: usize,
+    end: usize,
+}
+
+impl OverflowBuf {
+    pub fn new() -> Self {
+        OverflowBuf {
+            buf: [0u8; OVERFLOW_SIZE],
+            start: 0,
+            end: 0,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.buf.len()
+    }
+
+    pub fn len(&self) -> usize { self.end - self.start }
+
+    pub fn get_buf(&mut self) -> &mut [u8] {
+        self.start = 0;
+        self.end = 0;
+        &mut self.buf
+    }
+
+    pub fn truncate(&mut self, size: usize) {
+        self.end = size;
+    }
+
+    pub fn read(&mut self, buf: &mut [u8]) -> usize {
+        let bytes_to_copy = buf.len().min(self.end - self.start);
+        buf[..bytes_to_copy].copy_from_slice(&self.buf[self.start .. self.start + bytes_to_copy]);
+        self.start += bytes_to_copy;
+        bytes_to_copy
+    }
+}
+
+struct Cryptostream<R: BufRead> {
     reader: R,
     cipher: Cipher,
     crypter: Crypter,
     finalized: bool,
+    overflow: OverflowBuf,
 }
 
-impl<R: Read> Cryptostream<R> {
+impl<R: BufRead> Cryptostream<R> {
     pub fn new(mode: Mode, reader: R, cipher: Cipher, key: &[u8], iv: &[u8]) -> Result<Self, ErrorStack> {
         let mut crypter = Crypter::new(cipher, mode, key, Some(iv))?;
         crypter.pad(true);
@@ -24,71 +68,82 @@ impl<R: Read> Cryptostream<R> {
             cipher: cipher.clone(),
             crypter: crypter,
             finalized: false,
+            overflow: OverflowBuf::new(),
         })
     }
 }
 
-impl<R: Read> Read for Cryptostream<R> {
-    fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Error> {
+impl<R: BufRead> Read for Cryptostream<R> {
+    fn read(&mut self, mut sink_buffer: &mut [u8]) -> Result<usize, Error> {
         if self.finalized {
+            warn!("Attempt to read from finalized cryptostream");
             return Ok(0);
         }
 
+        // Drain the overflow buffer first, make no attempt to add more data
+        // from the underlying stream.
+        if !self.overflow.is_empty() {
+            trace!("Reading {} bytes out of {} bytes from overflow buffer",
+                   self.overflow.len().min(sink_buffer.len()),
+                   self.overflow.len());
+            return Ok(self.overflow.read(&mut sink_buffer));
+        }
+
         let block_size = self.cipher.block_size();
-        // we could actually easily support algorithms with non-power-of-two block sizes by simply
-        // using modulo division instead of ANDing with `blocksize - 1`, but in practice all
-        // ciphers worth supporting will have a power-of-two block size and the bitwise AND is much
-        // faster.
-        debug_assert!(
-            block_size.count_ones() == 1,
-            "Only algorithms with power-of-two block sizes are supported!"
-        );
-        let mut buffer = [0u8; BUFFER_SIZE];
-        let max_read = BUFFER_SIZE & !(block_size - 1);
-        let mut buffer = &mut buffer[0..max_read];
 
-        let mut bytes_read = self.reader.read(&mut buffer)?;
-        // eprintln!("Read {} bytes from underlying stream", bytes_read);
-        let mut eof = bytes_read == 0;
-        while !eof && ((bytes_read & (block_size - 1)) != bytes_read) {
-            // we have read a partial block, which is only allowed
-            // if this is the end of the underlying stream.
-            bytes_read += match self.reader.read(&mut buffer[bytes_read..]) {
-                Ok(0) => {
-                    eof = true;
-                    0
-                }
-                Ok(n) => {
-                    // eprintln!("Read {} bytes from underlying stream", n);
-                    n
-                }
-                Err(e) => match e.kind() {
-                    ErrorKind::Interrupted => continue,
-                    // Technically we must be able to guarantee no bytes were read if we return
-                    // with an error, but how can we do that?
-                    _ => return Err(e),
-                },
-            };
+        let mut bytes_consumed= 0;
+        let mut bytes_produced= 0;
+        while !self.finalized && bytes_produced == 0 {  // This can be optimized to fill buf as much as possible
+            {
+                let source_buffer = self.reader.fill_buf()?;
+                bytes_produced = match source_buffer.len() {
+                    0 => {
+                        trace!("Finalizing cryptostream");
+                        self.finalized = true;
+                        let bytes_produced = self.crypter.finalize(&mut sink_buffer)
+                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+                        trace!("Produced {} bytes into sink buffer",bytes_produced);
+                        bytes_produced
+                    },
+                    len if sink_buffer.len() >= 2 * block_size => {
+                        // OpenSSL requires the output to be at least input len + blocksize. When
+                        // buf.len() would be 1 + block_size we'd be writing a single byte to
+                        // crypter.update, which may cause no output. We'd then loop, processing
+                        // a single byte at a time, until we have output or the underlying stream
+                        // is depleted, in which case we ended up in crypter.finalize above.
+                        //
+                        // That would suck, so let's require at least 2 blocks of output, so we can
+                        // write a single block and get at least a single block as output.
+                        bytes_consumed = len.min(sink_buffer.len() - block_size);
+                        trace!("Consuming {} bytes from source buffer", bytes_consumed);
+                        let bytes_produced = self.crypter
+                            .update(&source_buffer[..bytes_consumed], &mut sink_buffer)
+                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+                        trace!("Produced {} bytes into sink buffer", bytes_produced);
+                        bytes_produced
+                    },
+                    len => {
+                        // Read through the overflow buffer
+                        bytes_consumed = len.min(self.overflow.capacity() - block_size);
+                        trace!("Consuming {} bytes from source buffer", bytes_consumed);
+                        let bytes_produced = self.crypter
+                            .update(&source_buffer[..bytes_consumed], self.overflow.get_buf())
+                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+                        self.overflow.truncate(bytes_produced);
+                        trace!("Produced {} bytes into overflow buffer", bytes_produced);
+
+                        // Read from the overflow buffer to make progress
+                        trace!("Reading {} bytes out of {} bytes from overflow buffer",
+                               self.overflow.len().min(sink_buffer.len()),
+                               self.overflow.len());
+                        self.overflow.read(&mut sink_buffer)
+                    }
+                };
+            }
+            self.reader.consume(bytes_consumed);
         }
 
-        let mut bytes_written = 0;
-        if bytes_read != 0 {
-            let write_bytes = self.crypter
-                .update(&buffer[bytes_written..bytes_read], &mut buf)
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
-            bytes_written += write_bytes;
-        };
-        if eof {
-            self.finalized = true;
-            let write_bytes = self.crypter.finalize(&mut buf[bytes_written..])
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
-            bytes_written += write_bytes;
-        }
-
-        // eprintln!("Returning {} bytes encrypted", bytes_written);
-        return Ok(bytes_written);
+        Ok(bytes_produced)
     }
 }
 
