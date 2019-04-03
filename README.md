@@ -1,6 +1,6 @@
 # Rust Cryptostream Crate
 
-[![crates.io](https://img.shields.io/crates/v/cryptostream.svg)](https://https://crates.io/crates/cryptostream) [![docs.rs](https://docs.rs/cryptostream/badge.svg)](https://docs.rs/crate/cryptostream)
+[![crates.io](https://img.shields.io/crates/v/cryptostream.svg)](https://crates.io/crates/cryptostream) [![docs.rs](https://docs.rs/cryptostream/badge.svg)](https://docs.rs/crate/cryptostream)
 
 `cryptostream` provides a rust equivalent to the [.NET
 Cryptostream](https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.cryptostream)
