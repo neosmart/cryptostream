@@ -1,5 +1,10 @@
-//! Cryptostream types which operate over [`Write`] streams, providing both encryption and
-//! decryption facilities.
+//! Cryptostream types which operate over [`Write`](std::io::Write) streams, providing both
+//! encryption and decryption facilities.
+//!
+//! Use [`write::Encryptor`] to pass in plaintext and have it write the encrypted equivalent to the
+//! underlying `Write` stream, or use [`write::Decryptor`] to do the opposite and have decrypted
+//! plaintext written to the wrapped `Write` output each time encrypted bytes are written to the
+//! instance.
 
 use openssl::error::ErrorStack;
 use openssl::symm::{Cipher, Crypter, Mode};
@@ -72,7 +77,7 @@ impl<W: Write> Drop for Cryptostream<W> {
     }
 }
 
-/// An encrypting stream adapter that encrypts what is written to it
+/// An encrypting stream adapter that encrypts what is written to it.
 ///
 /// `write::Encryptor` is a stream adapter that sits atop a `Write` stream. Plaintext written to
 /// the `Encryptor` is encrypted and written to the underlying stream.

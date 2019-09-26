@@ -1,5 +1,10 @@
-//! Cryptostream types which operate over [`Read`] streams, providing both encryption and
-//! decryption facilities.
+//! Cryptostream types which operate over [`Read`](std::io::Read) streams, providing both
+//! encryption and decryption facilities.
+//!
+//! Create a [`read::Decryptor`] over/from an encrypted `Read` source to decrypt its contents
+//! on-the-fly when reading out of the `Decryptor`, or use [`read::Encryptor`] to read plaintext
+//! from the wrapped/underlying `Read` instance and return the encrypted equivalent (a block at a
+//! time) via `.read(..)` calls.
 
 use bufread;
 use openssl::error::ErrorStack;

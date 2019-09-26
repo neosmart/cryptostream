@@ -1,10 +1,27 @@
-//! Cryptostream types which operate over [`BufRead`] streams, providing both encryption and
-//! decryption facilities.
+//! Cryptostream types which operate over [`BufRead`](std::io::BufRead) streams, providing both
+//! encryption and decryption facilities.
+//!
+//! Note that unlike the situation with `Read` and `Write`, there's no need for a `bufwrite`
+//! counterpart to this flavor of `Cryptostream` as there is no issue with simply wrapping a
+//! [`write::Encryptor`]/[`write::Decryptor`] instance (implementing [`Write`](std::io::Write)) in
+//! a `BufWriter` the way you would any other `Write` destination. However when reading *out* of a
+//! `BufRead` source (whether to encrypt or decrypt its contents) you will run into an ugly
+//! situation when you read partial blocks as only a complete block in the middle of a stream can
+//! be correctly encrypted or decrypted. If your block is `n` bytes and your call to
+//! `source.read()` returns `n + x` bytes, you need to buffer them somewhere then hand them back to
+//! the `Cryptostream` encryptor/decryptor to prepend to the results of the next read so that they
+//! can be processed correctly.
+//!
+//! The `bufread::Cryptostream` variants in this module handle the buffering for you, and ensure
+//! that reads always return (when and where possible) nice, round buffers divisible by the
+//! enryption algorithm's block size.
 
 use openssl::error::ErrorStack;
 use openssl::symm::{Cipher, Crypter, Mode};
 use std::io::{BufRead, Error, ErrorKind, Read};
 
+/// This size is only used for the creation of the internal buffers and has no bearing on the block
+/// size, apart from necessarily being at least as large. 4KB should be enough for everyone, right?
 const BUFFER_SIZE: usize = 4096;
 
 struct Cryptostream<R: Read> {
@@ -35,7 +52,7 @@ impl<R: Read> Read for Cryptostream<R> {
         }
 
         let block_size = self.cipher.block_size();
-        // we could actually easily support algorithms with non-power-of-two block sizes by simply
+        // We could actually easily support algorithms with non-power-of-two block sizes by simply
         // using modulo division instead of ANDing with `blocksize - 1`, but in practice all
         // ciphers worth supporting will have a power-of-two block size and the bitwise AND is much
         // faster.
@@ -51,8 +68,8 @@ impl<R: Read> Read for Cryptostream<R> {
         // eprintln!("Read {} bytes from underlying stream", bytes_read);
         let mut eof = bytes_read == 0;
         while !eof && ((bytes_read & (block_size - 1)) != bytes_read) {
-            // we have read a partial block, which is only allowed
-            // if this is the end of the underlying stream.
+            // We have read a partial block, which is only allowed if this is the end of the
+            // underlying stream.
             bytes_read += match self.reader.read(&mut buffer[bytes_read..]) {
                 Ok(0) => {
                     eof = true;
@@ -94,7 +111,7 @@ impl<R: Read> Read for Cryptostream<R> {
 
 /// An encrypting stream adapter that encrypts what it reads
 ///
-/// `read::Encryptor` is a stream adapter that sits atop a plaintext (non-encrypted) [`BufRead`]
+/// `bufread::Encryptor` is a stream adapter that sits atop a plaintext (non-encrypted) [`BufRead`]
 /// source, exposing a second [`BufRead`] interface. Bytes read out of `bufread::Encryptor` are the
 /// encrypted contents of the underlying stream.
 pub struct Encryptor<R: BufRead> {
@@ -123,8 +140,8 @@ impl<R: BufRead> Read for Encryptor<R> {
 
 /// A decrypting stream adapter that decrypts what it reads
 ///
-/// `read::Decryptor` is a stream adapter that sits atop a ciphertext (encrypted) `Read` source,
-/// exposing a second `Read` interface. Bytes read out of `read::Decrytor` are the decrypted
+/// `bufread::Decryptor` is a stream adapter that sits atop a ciphertext (encrypted) `BufRead` source,
+/// exposing a second `BufRead` interface. Bytes read out of `bufread::Decrytor` are the decrypted
 /// contents of the underlying `Read` stream.
 pub struct Decryptor<R: BufRead> {
     inner: Cryptostream<R>,
