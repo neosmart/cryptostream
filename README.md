@@ -38,26 +38,26 @@ state:
 
 ```rust
 let src: Vec<u8> =
-	decode("vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdOVC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXvQ6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==").unwrap();
+    decode("vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdOVC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXvQ6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==").unwrap();
 let key: Vec<_> = decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
 let iv: Vec<_> = decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
 
 // the source can be any object implementing `Read`. In this case, a simple &[u8] slice.
 let mut decryptor = read::Decryptor::new(src.as_slice(),
-										 Cipher::aes_128_cbc(),
-										 &key, &iv).unwrap();
+                                         Cipher::aes_128_cbc(),
+                                         &key, &iv).unwrap();
 
 let mut decrypted = [0u8; 1024]; // a buffer to decrypt into
 let mut bytes_decrypted = 0;
 
 loop {
-	// Just read from the `Decryptor` as if it were any other `Read` impl.
-	// Decryption is automatic.
-	let read_count = decryptor.read(&mut decrypted[bytes_decrypted..]).unwrap();
-	bytes_decrypted += read_count;
-	if read_count == 0 {
-		break;
-	}
+    // Just read from the `Decryptor` as if it were any other `Read` impl.
+    // Decryption is automatic.
+    let read_count = decryptor.read(&mut decrypted[bytes_decrypted..]).unwrap();
+    bytes_decrypted += read_count;
+    if read_count == 0 {
+        break;
+    }
 }
 
 println!("{}", String::from_utf8_lossy(&decrypted));
@@ -68,25 +68,25 @@ wish to perform decryption all the same?
 
 ```rust
 let src: Vec<u8> =
-	decode("vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdOVC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXvQ6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==").unwrap();
+    decode("vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdOVC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXvQ6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==").unwrap();
 let key: Vec<_> = decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
 let iv: Vec<_> = decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
 
 // the destination can be any object implementing `Write`. In this case, a Vec<u8>.
 let mut decrypted = Vec::new();
 {
-	let mut decryptor = write::Decryptor::new(&mut decrypted,
-											  Cipher::aes_128_cbc(),
-											  &key, &iv).unwrap();
+    let mut decryptor = write::Decryptor::new(&mut decrypted,
+                                              Cipher::aes_128_cbc(),
+                                              &key, &iv).unwrap();
 
-	let mut bytes_decrypted = 0;
+    let mut bytes_decrypted = 0;
 
-	while bytes_decrypted != src.len() {
-		// Just write encrypted ciphertext to the `Decryptor` instance as if it were any
-		// other `Write` impl. Decryption is automatic.
-		let write_count = decryptor.write(&src[bytes_decrypted..]).unwrap();
-		bytes_decrypted += write_count;
-	}
+    while bytes_decrypted != src.len() {
+        // Just write encrypted ciphertext to the `Decryptor` instance as if it were any
+        // other `Write` impl. Decryption is automatic.
+        let write_count = decryptor.write(&src[bytes_decrypted..]).unwrap();
+        bytes_decrypted += write_count;
+    }
 }
 
 println!("{}", String::from_utf8_lossy(&decrypted));
