@@ -6,6 +6,7 @@
 //! plaintext written to the wrapped `Write` output each time encrypted bytes are written to the
 //! instance.
 
+use std::cell::Cell;
 use openssl::error::ErrorStack;
 use openssl::symm::{Cipher, Crypter, Mode};
 use std::io::{Error, ErrorKind, Write};
@@ -14,7 +15,7 @@ const BUFFER_SIZE: usize = 4096;
 
 struct Cryptostream<W: Write> {
     buffer: [u8; BUFFER_SIZE],
-    writer: W,
+    writer: Cell<Option<W>>,
     cipher: Cipher,
     crypter: Crypter,
     finalized: bool,
@@ -40,7 +41,7 @@ impl<W: Write> Write for Cryptostream<W> {
 
         let mut bytes_written = 0;
         while bytes_written != bytes_encrypted {
-            let write_bytes = self.writer.write(&self.buffer[bytes_written..bytes_encrypted])?;
+            let write_bytes = self.writer.get_mut().as_mut().unwrap().write(&self.buffer[bytes_written..bytes_encrypted])?;
             // eprintln!("Wrote {} bytes to underlying stream", write_bytes);
             bytes_written += write_bytes;
         }
@@ -63,7 +64,7 @@ impl<W: Write> Write for Cryptostream<W> {
             let bytes_written = self.crypter.finalize(&mut buffer)
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
             // eprintln!("Flushed {} bytes to the underlying stream", bytes_written);
-            self.writer.write(&buffer[0..bytes_written])?;
+            self.writer.get_mut().as_mut().unwrap().write(&buffer[0..bytes_written])?;
         }
 
         return Ok(());
@@ -91,11 +92,16 @@ impl<W: Write> Cryptostream<W> {
 
         Ok(Self {
             buffer: [0u8; BUFFER_SIZE],
-            writer: writer,
+            writer: Cell::new(Some(writer)),
             cipher: cipher.clone(),
             crypter: crypter,
             finalized: false,
         })
+    }
+
+    pub fn into_inner(mut self) -> W {
+        debug_assert!(self.writer.get_mut().is_some());
+        self.writer.replace(None).unwrap()
     }
 }
 
@@ -104,6 +110,10 @@ impl<W: Write> Encryptor<W> {
         Ok(Self {
             inner: Cryptostream::new(Mode::Encrypt, writer, cipher, key, iv)?,
         })
+    }
+
+    pub fn into_inner(self) -> W {
+        self.inner.into_inner()
     }
 }
 
@@ -135,6 +145,10 @@ impl<W: Write> Decryptor<W> {
         Ok(Self {
             inner: Cryptostream::new(Mode::Decrypt, writer, cipher, key, iv)?,
         })
+    }
+
+    pub fn into_inner(self) -> W {
+        self.inner.into_inner()
     }
 }
 

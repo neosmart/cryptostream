@@ -26,6 +26,10 @@ impl<R: Read> Encryptor<R> {
             reader: bufread::Encryptor::new(BufReader::new(reader), cipher, key, iv)?,
         })
     }
+
+    pub fn into_inner(self) -> R {
+        self.reader.into_inner().into_inner()
+    }
 }
 
 impl<R: Read> Read for Encryptor<R> {
@@ -50,6 +54,10 @@ impl<R: Read> Decryptor<R> {
         Ok(Self {
             reader: bufread::Decryptor::new(BufReader::new(reader), cipher, key, iv)?,
         })
+    }
+
+    pub fn into_inner(self) -> R {
+        self.reader.into_inner().into_inner()
     }
 }
 

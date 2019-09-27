@@ -45,6 +45,10 @@ impl<R: Read> Cryptostream<R> {
             finalized: false,
         })
     }
+
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
 }
 
 impl<R: Read> Read for Cryptostream<R> {
@@ -125,6 +129,10 @@ impl<R: BufRead> Encryptor<R> {
             inner: Cryptostream::new(Mode::Encrypt, reader, cipher, key, iv)?,
         })
     }
+
+    pub fn into_inner(self) -> R {
+        self.inner.reader
+    }
 }
 
 impl<R: BufRead> Read for Encryptor<R> {
@@ -153,6 +161,10 @@ impl<R: BufRead> Decryptor<R> {
         Ok(Self {
             inner: Cryptostream::new(Mode::Decrypt, reader, cipher, key, iv)?,
         })
+    }
+
+    pub fn into_inner(self) -> R {
+        self.inner.into_inner()
     }
 }
 
