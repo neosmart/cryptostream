@@ -14,10 +14,57 @@ const BUFFER_SIZE: usize = 4096;
 
 struct Cryptostream<W: Write> {
     buffer: [u8; BUFFER_SIZE],
+    /// This `Option` is guaranteed to always be `Some` up until the point
+    /// [`to_inner()`](self::to_inner) is called, which is the only place `None` is swapped in. As
+    /// that call consumes the `Cryptostream` object, we can safely assume that `writer.unwrap()`
+    /// is always safe to call.
     writer: Option<W>,
     cipher: Cipher,
     crypter: Crypter,
     finalized: bool,
+}
+
+impl<W: Write> Cryptostream<W> {
+    pub fn new(mode: Mode, writer: W, cipher: Cipher, key: &[u8], iv: &[u8]) -> Result<Self, ErrorStack> {
+        let mut crypter = Crypter::new(cipher, mode, key, Some(iv))?;
+        crypter.pad(true);
+
+        Ok(Self {
+            buffer: [0u8; BUFFER_SIZE],
+            writer: Some(writer),
+            cipher: cipher.clone(),
+            crypter: crypter,
+            finalized: false,
+        })
+    }
+
+    /// Function shared by Drop and finish()
+    fn inner_finish(&mut self) -> Result<(), Error> {
+        if !self.finalized {
+            self.finalized = true;
+
+            let mut buffer = [0u8; 16];
+            let bytes_written = self.crypter.finalize(&mut buffer)
+                .map_err(|e| Error::new(ErrorKind::Other, e))?;
+            // eprintln!("Flushed {} bytes to the underlying stream", bytes_written);
+            self.writer.as_mut().unwrap().write(&buffer[0..bytes_written])?;
+        }
+
+        self.flush()
+    }
+
+    /// Finishes writing to the underlying cryptostream, padding the final block as needed,
+    /// flushing all output. Returns the wrapped `Write` instance.
+    pub fn finish(mut self) -> Result<W, Error> {
+        self.inner_finish()?;
+
+        // Return the original `W` instance. Since we implement `Drop`, we have to put something in
+        // its place, as we cannot simply destructure ourselves. (This is why `inner` is an
+        // `Option<W>` rather than `W`).
+        let mut inner = None;
+        std::mem::swap::<Option<W>>(&mut self.writer, &mut inner);
+        Ok(inner.unwrap())
+    }
 }
 
 impl<W: Write> Write for Cryptostream<W> {
@@ -50,29 +97,23 @@ impl<W: Write> Write for Cryptostream<W> {
         // Regardless of how many bytes of encrypted ciphertext we wrote to the underlying stream
         // (taking padding into consideration) we return how many bytes of *input* were processed,
         // which can never be larger than the number of bytes passed in to us originally.
-        return Ok(buf.len());
+        Ok(buf.len())
     }
 
+    /// Flushes the underlying stream but does not clear all internal buffers or explicitly pad the
+    /// output blocks as that would prevent us from appeding anything in the future if we are not a
+    /// block boundary.
     fn flush(&mut self) -> Result<(), Error> {
-        // eprintln!("flush called");
-
-        if !self.finalized {
-            self.finalized = true;
-
-            let mut buffer = [0u8; 16];
-            let bytes_written = self.crypter.finalize(&mut buffer)
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Flushed {} bytes to the underlying stream", bytes_written);
-            self.writer.as_mut().unwrap().write(&buffer[0..bytes_written])?;
-        }
-
-        return Ok(());
+        self.writer.as_mut().unwrap().flush()
     }
 }
 
 impl<W: Write> Drop for Cryptostream<W> {
+    /// Write all buffered output to the underlying stream, pad the final block if needed, and
+    /// flush everything.
     fn drop(&mut self) {
-        self.flush().unwrap();
+        // We should never panic on Drop
+        let _r = self.inner_finish();
     }
 }
 
@@ -84,29 +125,6 @@ pub struct Encryptor<W: Write> {
     inner: Cryptostream<W>,
 }
 
-impl<W: Write> Cryptostream<W> {
-    pub fn new(mode: Mode, writer: W, cipher: Cipher, key: &[u8], iv: &[u8]) -> Result<Self, ErrorStack> {
-        let mut crypter = Crypter::new(cipher, mode, key, Some(iv))?;
-        crypter.pad(true);
-
-        Ok(Self {
-            buffer: [0u8; BUFFER_SIZE],
-            writer: Some(writer),
-            cipher: cipher.clone(),
-            crypter: crypter,
-            finalized: false,
-        })
-    }
-
-    pub fn into_inner(mut self) -> W {
-        debug_assert!(self.writer.is_some(), "Writer not set! Has into_inner() already been called?");
-
-        let mut inner = None;
-        std::mem::swap::<Option<W>>(&mut self.writer, &mut inner);
-        inner.unwrap()
-    }
-}
-
 impl<W: Write> Encryptor<W> {
     pub fn new(writer: W, cipher: Cipher, key: &[u8], iv: &[u8]) -> Result<Self, ErrorStack> {
         Ok(Self {
@@ -114,8 +132,10 @@ impl<W: Write> Encryptor<W> {
         })
     }
 
-    pub fn into_inner(self) -> W {
-        self.inner.into_inner()
+    /// Finishes writing to the underlying cryptostream, padding the final block as needed,
+    /// flushing all output. Returns the wrapped `Write` instance.
+    pub fn finish(self) -> Result<W, Error> {
+        self.inner.finish()
     }
 }
 
@@ -124,13 +144,14 @@ impl<W: Write> Write for Encryptor<W> {
     /// to the underlying `Write` object. Writing less than cipher-specific `blocksize` bytes
     /// causes the output to be finalized.
     fn write(&mut self, mut buf: &[u8]) -> Result<usize, Error> {
-        return self.inner.write(&mut buf);
+        self.inner.write(&mut buf)
     }
 
-    /// Writes the final bytes of encrypted content to the underlying stream. This must not be
-    /// called before all bytes have been written to the cryptostream.
+    /// Flushes the underlying stream but does not clear all internal buffers or explicitly pad the
+    /// output blocks as that would prevent us from appeding anything in the future if we are not a
+    /// block boundary.
     fn flush(&mut self) -> Result<(), Error> {
-        return self.inner.flush();
+        self.inner.flush()
     }
 }
 
@@ -149,8 +170,10 @@ impl<W: Write> Decryptor<W> {
         })
     }
 
-    pub fn into_inner(self) -> W {
-        self.inner.into_inner()
+    /// Finishes writing to the underlying cryptostream, padding the final block as needed,
+    /// flushing all output. Returns the wrapped `Write` instance.
+    pub fn finish(self) -> Result<W, Error> {
+        self.inner.finish()
     }
 }
 
@@ -158,13 +181,14 @@ impl<W: Write> Write for Decryptor<W> {
     /// Writes encrypted bytes to the cryptostream, causing their decrypted contents to be written
     /// to the underlying `Write` object.
     fn write(&mut self, mut buf: &[u8]) -> Result<usize, Error> {
-        return self.inner.write(&mut buf);
+        self.inner.write(&mut buf)
     }
 
-    /// Writes the final bytes of encrypted content to the underlying stream. This must not be
-    /// called before all bytes have been written to the cryptostream.
+    /// Flushes the underlying stream but does not clear all internal buffers or explicitly pad the
+    /// output blocks as that would prevent us from reading any further in the future if we are not
+    /// a block boundary.
     fn flush(&mut self) -> Result<(), Error> {
-        return self.inner.flush();
+        self.inner.flush()
     }
 }
 

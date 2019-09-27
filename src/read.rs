@@ -27,8 +27,8 @@ impl<R: Read> Encryptor<R> {
         })
     }
 
-    pub fn into_inner(self) -> R {
-        self.reader.into_inner().into_inner()
+    pub fn finish(self) -> R {
+        self.reader.finish().into_inner()
     }
 }
 
@@ -56,8 +56,8 @@ impl<R: Read> Decryptor<R> {
         })
     }
 
-    pub fn into_inner(self) -> R {
-        self.reader.into_inner().into_inner()
+    pub fn finish(self) -> R {
+        self.reader.finish().into_inner()
     }
 }
 

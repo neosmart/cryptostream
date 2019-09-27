@@ -46,7 +46,7 @@ impl<R: Read> Cryptostream<R> {
         })
     }
 
-    pub fn into_inner(self) -> R {
+    pub fn finish(self) -> R {
         self.reader
     }
 }
@@ -110,7 +110,7 @@ impl<R: Read> Read for Cryptostream<R> {
         }
 
         // eprintln!("Returning {} bytes encrypted", bytes_written);
-        return Ok(bytes_written);
+        Ok(bytes_written)
     }
 }
 
@@ -130,7 +130,7 @@ impl<R: BufRead> Encryptor<R> {
         })
     }
 
-    pub fn into_inner(self) -> R {
+    pub fn finish(self) -> R {
         self.inner.reader
     }
 }
@@ -143,7 +143,7 @@ impl<R: BufRead> Read for Encryptor<R> {
     /// is normal for it to read less than the buffer size if the buffer is not a multiple of the
     /// block size.
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Error> {
-        return self.inner.read(&mut buf);
+        self.inner.read(&mut buf)
     }
 }
 
@@ -163,8 +163,8 @@ impl<R: BufRead> Decryptor<R> {
         })
     }
 
-    pub fn into_inner(self) -> R {
-        self.inner.into_inner()
+    pub fn finish(self) -> R {
+        self.inner.finish()
     }
 }
 
@@ -176,6 +176,6 @@ impl<R: BufRead> Read for Decryptor<R> {
     /// is normal for it to read less than the buffer size if the buffer is not a multiple of the
     /// block size.
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Error> {
-        return self.inner.read(&mut buf);
+        self.inner.read(&mut buf)
     }
 }
