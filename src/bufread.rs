@@ -26,6 +26,7 @@ const BUFFER_SIZE: usize = 4096;
 
 struct Cryptostream<R: Read> {
     reader: R,
+    buffer: [u8; BUFFER_SIZE],
     cipher: Cipher,
     crypter: Crypter,
     finalized: bool,
@@ -38,6 +39,7 @@ impl<R: Read> Cryptostream<R> {
 
         Ok(Self {
             reader: reader,
+            buffer: [0u8; BUFFER_SIZE],
             cipher: cipher.clone(),
             crypter: crypter,
             finalized: false,
@@ -60,9 +62,8 @@ impl<R: Read> Read for Cryptostream<R> {
             block_size.count_ones() == 1,
             "Only algorithms with power-of-two block sizes are supported!"
         );
-        let mut buffer = [0u8; BUFFER_SIZE];
         let max_read = BUFFER_SIZE & !(block_size - 1);
-        let mut buffer = &mut buffer[0..max_read];
+        let mut buffer = &mut self.buffer[0..max_read];
 
         let mut bytes_read = self.reader.read(&mut buffer)?;
         // eprintln!("Read {} bytes from underlying stream", bytes_read);

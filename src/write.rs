@@ -13,6 +13,7 @@ use std::io::{Error, ErrorKind, Write};
 const BUFFER_SIZE: usize = 4096;
 
 struct Cryptostream<W: Write> {
+    buffer: [u8; BUFFER_SIZE],
     writer: W,
     cipher: Cipher,
     crypter: Crypter,
@@ -25,15 +26,13 @@ impl<W: Write> Write for Cryptostream<W> {
             return Ok(0);
         }
 
-        let mut buffer = [0u8; BUFFER_SIZE];
-
-        let mut bytes_encrypted = self.crypter.update(&buf, &mut buffer)
+        let mut bytes_encrypted = self.crypter.update(&buf, &mut self.buffer)
             .map_err(|e| Error::new(ErrorKind::Other, e))?;
         // eprintln!("Encrypted {} bytes written to cryptostream", bytes_encrypted);
 
         if buf.len() < self.cipher.block_size() {
             self.finalized = true;
-            let write_bytes = self.crypter.finalize(&mut buffer[bytes_encrypted..])
+            let write_bytes = self.crypter.finalize(&mut self.buffer[bytes_encrypted..])
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
             // eprintln!("Encrypted {} bytes written to cryptostream", write_bytes);
             bytes_encrypted += write_bytes;
@@ -41,7 +40,7 @@ impl<W: Write> Write for Cryptostream<W> {
 
         let mut bytes_written = 0;
         while bytes_written != bytes_encrypted {
-            let write_bytes = self.writer.write(&buffer[bytes_written..bytes_encrypted])?;
+            let write_bytes = self.writer.write(&self.buffer[bytes_written..bytes_encrypted])?;
             // eprintln!("Wrote {} bytes to underlying stream", write_bytes);
             bytes_written += write_bytes;
         }
@@ -91,6 +90,7 @@ impl<W: Write> Cryptostream<W> {
         crypter.pad(true);
 
         Ok(Self {
+            buffer: [0u8; BUFFER_SIZE],
             writer: writer,
             cipher: cipher.clone(),
             crypter: crypter,
