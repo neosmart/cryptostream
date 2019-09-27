@@ -72,9 +72,7 @@ fn basic_write_encrypt() {
 
     let mut crypter = Crypter::new(cipher, Mode::Decrypt, &key, Some(&iv)).unwrap();
     let mut decrypted = [0u8; 1024];
-    let mut bytes_decrypted = crypter.
-        update(&encrypted, &mut decrypted)
-        .unwrap();
+    let mut bytes_decrypted = crypter.update(&encrypted, &mut decrypted).unwrap();
     bytes_decrypted += crypter.finalize(&mut decrypted[bytes_decrypted..]).unwrap();
 
     eprintln!("Decrypted {} bytes", bytes_decrypted);

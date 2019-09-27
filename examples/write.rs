@@ -16,8 +16,8 @@ fn main() {
     // the destination can be any object implementing `Write`. In this case, a Vec<u8>.
     let mut decrypted = Vec::new();
     {
-        let mut decryptor = write::Decryptor::new(&mut decrypted,
-                                                  Cipher::aes_128_cbc(), &key, &iv).unwrap();
+        let mut decryptor =
+            write::Decryptor::new(&mut decrypted, Cipher::aes_128_cbc(), &key, &iv).unwrap();
 
         let mut bytes_decrypted = 0;
 

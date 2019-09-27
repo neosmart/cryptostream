@@ -14,8 +14,8 @@ fn main() {
     let iv: Vec<_> = decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
 
     // the source can be any object implementing `Read`. In this case, a simple &[u8] slice.
-    let mut decryptor = read::Decryptor::new(src.as_slice(),
-                                             Cipher::aes_128_cbc(), &key, &iv).unwrap();
+    let mut decryptor =
+        read::Decryptor::new(src.as_slice(), Cipher::aes_128_cbc(), &key, &iv).unwrap();
 
     let mut decrypted = [0u8; 1024]; // a buffer to decrypt into
     let mut bytes_decrypted = 0;

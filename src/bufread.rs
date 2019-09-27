@@ -33,7 +33,13 @@ struct Cryptostream<R: Read> {
 }
 
 impl<R: Read> Cryptostream<R> {
-    pub fn new(mode: Mode, reader: R, cipher: Cipher, key: &[u8], iv: &[u8]) -> Result<Self, ErrorStack> {
+    pub fn new(
+        mode: Mode,
+        reader: R,
+        cipher: Cipher,
+        key: &[u8],
+        iv: &[u8],
+    ) -> Result<Self, ErrorStack> {
         let mut crypter = Crypter::new(cipher, mode, key, Some(iv))?;
         crypter.pad(true);
 
@@ -95,7 +101,8 @@ impl<R: Read> Read for Cryptostream<R> {
 
         let mut bytes_written = 0;
         if bytes_read != 0 {
-            let write_bytes = self.crypter
+            let write_bytes = self
+                .crypter
                 .update(&buffer[bytes_written..bytes_read], &mut buf)
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
             // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
@@ -103,7 +110,9 @@ impl<R: Read> Read for Cryptostream<R> {
         };
         if eof {
             self.finalized = true;
-            let write_bytes = self.crypter.finalize(&mut buf[bytes_written..])
+            let write_bytes = self
+                .crypter
+                .finalize(&mut buf[bytes_written..])
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
             // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
             bytes_written += write_bytes;
