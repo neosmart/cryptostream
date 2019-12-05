@@ -110,12 +110,15 @@ impl<R: Read> Read for Cryptostream<R> {
         };
         if eof {
             self.finalized = true;
-            let write_bytes = self
-                .crypter
-                .finalize(&mut buf[bytes_written..])
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
-            bytes_written += write_bytes;
+
+            if bytes_read > 0 {
+                let write_bytes = self
+                    .crypter
+                    .finalize(&mut buf[bytes_written..])
+                    .map_err(|e| Error::new(ErrorKind::Other, e))?;
+                // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
+                bytes_written += write_bytes;
+            }
         }
 
         // eprintln!("Returning {} bytes encrypted", bytes_written);
