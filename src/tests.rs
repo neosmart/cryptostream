@@ -35,9 +35,14 @@ fn basic_read_encrypt() {
         total_bytes_read += bytes_read;
     }
 
-    assert!(total_bytes_read > dbg!(source.len()), "Encrypted payload less than original input!");
-    assert!(total_bytes_read < source.len() + cipher.block_size(),
-        "Encrypted payload exceeds padded original input!");
+    assert!(
+        total_bytes_read > dbg!(source.len()),
+        "Encrypted payload less than original input!"
+    );
+    assert!(
+        total_bytes_read < source.len() + cipher.block_size(),
+        "Encrypted payload exceeds padded original input!"
+    );
 
     let mut crypter = Crypter::new(cipher, Mode::Decrypt, &key, Some(&iv)).unwrap();
     let mut decrypted = [0u8; 1024];

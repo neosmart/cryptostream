@@ -22,6 +22,7 @@ struct Cryptostream<W: Write> {
     cipher: Cipher,
     crypter: Crypter,
     finalized: bool,
+    never_used: bool,
 }
 
 impl<W: Write> Cryptostream<W> {
@@ -38,6 +39,7 @@ impl<W: Write> Cryptostream<W> {
         Ok(Self {
             buffer: [0u8; BUFFER_SIZE],
             writer: Some(writer),
+            never_used: true,
             cipher: cipher.clone(),
             crypter: crypter,
             finalized: false,
@@ -49,16 +51,19 @@ impl<W: Write> Cryptostream<W> {
         if !self.finalized {
             self.finalized = true;
 
-            let mut buffer = [0u8; 16];
-            let bytes_written = self
-                .crypter
-                .finalize(&mut buffer)
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Flushed {} bytes to the underlying stream", bytes_written);
-            self.writer
-                .as_mut()
-                .unwrap()
-                .write(&buffer[0..bytes_written])?;
+            // Crypter::finalize() will panic if Crypter::update() was never previously called.
+            if !self.never_used {
+                let mut buffer = [0u8; 16];
+                let bytes_written = self
+                    .crypter
+                    .finalize(&mut buffer)
+                    .map_err(|e| Error::new(ErrorKind::Other, e))?;
+
+                self.writer
+                    .as_mut()
+                    .unwrap()
+                    .write(&buffer[0..bytes_written])?;
+            }
         }
 
         self.flush()
@@ -84,46 +89,40 @@ impl<W: Write> Write for Cryptostream<W> {
             return Ok(0);
         }
 
-        let mut bytes_encrypted = self
-            .crypter
-            .update(&buf, &mut self.buffer)
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
-        // eprintln!("Encrypted {} bytes written to cryptostream", bytes_encrypted);
+        // Crypter::update() requires `output.len() >= input.len() + block_size`
+        let block_size = self.cipher.block_size();
+        let max_read = std::cmp::min(BUFFER_SIZE - block_size, buf.len());
 
-        if buf.len() < self.cipher.block_size() {
-            self.finalized = true;
-            let write_bytes = self
+        if max_read > 0 {
+            let bytes_encrypted = self
                 .crypter
-                .finalize(&mut self.buffer[bytes_encrypted..])
+                .update(&buf[0..max_read], &mut self.buffer)
                 .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Encrypted {} bytes written to cryptostream", write_bytes);
-            bytes_encrypted += write_bytes;
-        };
 
-        let mut bytes_written = 0;
-        while bytes_written != bytes_encrypted {
-            let write_bytes = self
-                .writer
+            // Flag the crypter as having been used and needing finalizing
+            self.never_used = false;
+
+            self.writer
                 .as_mut()
                 .unwrap()
-                .write(&self.buffer[bytes_written..bytes_encrypted])?;
-            // eprintln!("Wrote {} bytes to underlying stream", write_bytes);
-            bytes_written += write_bytes;
+                .write_all(&self.buffer[0..bytes_encrypted])?;
         }
-
-        // eprintln!("Total bytes encrypted: {}", bytes_written);
 
         // Regardless of how many bytes of encrypted ciphertext we wrote to the underlying stream
         // (taking padding into consideration) we return how many bytes of *input* were processed,
         // which can never be larger than the number of bytes passed in to us originally.
-        Ok(buf.len())
+        Ok(max_read)
     }
 
     /// Flushes the underlying stream but does not clear all internal buffers or explicitly pad the
-    /// output blocks as that would prevent us from appeding anything in the future if we are not a
-    /// block boundary.
+    /// output blocks, as that would prevent us from appeding anything in the future if we are not
+    /// at a block boundary.
     fn flush(&mut self) -> Result<(), Error> {
-        self.writer.as_mut().unwrap().flush()
+        // If `Cryptostream::finish()` is manually called, writer can be `None`
+        match self.writer.as_mut() {
+            Some(x) => x.flush(),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -160,8 +159,7 @@ impl<W: Write> Encryptor<W> {
 
 impl<W: Write> Write for Encryptor<W> {
     /// Writes decrypted bytes to the cryptostream, causing their encrypted contents to be written
-    /// to the underlying `Write` object. Writing less than cipher-specific `blocksize` bytes
-    /// causes the output to be finalized.
+    /// to the underlying `Write` object.
     fn write(&mut self, mut buf: &[u8]) -> Result<usize, Error> {
         self.inner.write(&mut buf)
     }
