@@ -30,6 +30,7 @@ struct Cryptostream<R: Read> {
     cipher: Cipher,
     crypter: Crypter,
     finalized: bool,
+    bytes_read: usize,
 }
 
 impl<R: Read> Cryptostream<R> {
@@ -49,6 +50,7 @@ impl<R: Read> Cryptostream<R> {
             cipher: cipher.clone(),
             crypter: crypter,
             finalized: false,
+            bytes_read: 0,
         })
     }
 
@@ -101,6 +103,8 @@ impl<R: Read> Read for Cryptostream<R> {
 
         let mut bytes_written = 0;
         if bytes_read != 0 {
+            self.bytes_read += bytes_read;
+
             let write_bytes = self
                 .crypter
                 .update(&buffer[bytes_written..bytes_read], &mut buf)
@@ -110,12 +114,15 @@ impl<R: Read> Read for Cryptostream<R> {
         };
         if eof {
             self.finalized = true;
-            let write_bytes = self
-                .crypter
-                .finalize(&mut buf[bytes_written..])
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
-            bytes_written += write_bytes;
+
+            if self.bytes_read > 0 {
+                let write_bytes = self
+                    .crypter
+                    .finalize(&mut buf[bytes_written..])
+                    .map_err(|e| Error::new(ErrorKind::Other, e))?;
+                // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
+                bytes_written += write_bytes;
+            }
         }
 
         // eprintln!("Returning {} bytes encrypted", bytes_written);

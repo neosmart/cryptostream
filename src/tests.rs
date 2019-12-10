@@ -139,3 +139,18 @@ fn basic_write_decrypt() {
 
     assert_eq!(&decrypted, &TEST);
 }
+
+#[test]
+fn empty_read_decrypt() {
+    let key: [u8; 128 / 8] = rand::random();
+    let iv: [u8; 128 / 8] = rand::random();
+    let cipher = Cipher::aes_128_cbc();
+
+    let encrypted: &[u8] = b"";
+
+    let mut decrypted = [0u8; 1024];
+
+    let mut decryptor = read::Decryptor::new(encrypted, cipher, &key, &iv).unwrap();
+    let decrypted_bytes = decryptor.read(&mut decrypted[0..]).unwrap();
+    assert_eq!(decrypted_bytes, 0);
+}
