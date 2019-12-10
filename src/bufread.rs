@@ -91,7 +91,7 @@ impl<R: Read> Read for Cryptostream<R> {
         // loop over the input source until at least one block has been read and transformed.
         loop {
             let mut buffer = &mut self.buffer[bytes_read..max_read];
-            match dbg!(self.reader.read(&mut buffer)) {
+            match self.reader.read(&mut buffer) {
                 Ok(0) => {
                     self.finalized = true;
 
@@ -111,7 +111,7 @@ impl<R: Read> Read for Cryptostream<R> {
                 Ok(n) => {
                     self.never_used = false;
                     bytes_read += n;
-                    match dbg!(self.crypter.update(&buffer[0..n], &mut buf)) {
+                    match self.crypter.update(&buffer[0..n], &mut buf) {
                         Ok(0) => continue,
                         Ok(written) => return Ok(written),
                         e @ Err(_) => return e.map_err(|e| Error::new(ErrorKind::Other, e)),

@@ -36,7 +36,7 @@ fn basic_read_encrypt() {
     }
 
     assert!(
-        total_bytes_read > dbg!(source.len()),
+        total_bytes_read > source.len(),
         "Encrypted payload less than original input!"
     );
     assert!(
