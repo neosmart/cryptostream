@@ -21,7 +21,7 @@ fn basic_read_encrypt() {
     let mut total_bytes_read = 0;
     loop {
         let bytes_read = encryptor
-            .read(&mut encrypted)
+            .read(&mut encrypted[total_bytes_read..])
             .expect("Encryptor read failure!");
         if bytes_read == 0 {
             break;
@@ -34,6 +34,15 @@ fn basic_read_encrypt() {
         );
         total_bytes_read += bytes_read;
     }
+
+    assert!(
+        total_bytes_read > dbg!(source.len()),
+        "Encrypted payload less than original input!"
+    );
+    assert!(
+        total_bytes_read < source.len() + cipher.block_size(),
+        "Encrypted payload exceeds padded original input!"
+    );
 
     let mut crypter = Crypter::new(cipher, Mode::Decrypt, &key, Some(&iv)).unwrap();
     let mut decrypted = [0u8; 1024];
@@ -147,10 +156,42 @@ fn empty_read_decrypt() {
     let cipher = Cipher::aes_128_cbc();
 
     let encrypted: &[u8] = b"";
-
     let mut decrypted = [0u8; 1024];
 
     let mut decryptor = read::Decryptor::new(encrypted, cipher, &key, &iv).unwrap();
     let decrypted_bytes = decryptor.read(&mut decrypted[0..]).unwrap();
     assert_eq!(decrypted_bytes, 0);
+}
+
+#[test]
+fn empty_write_decrypt() {
+    let key: [u8; 128 / 8] = rand::random();
+    let iv: [u8; 128 / 8] = rand::random();
+    let cipher = Cipher::aes_128_cbc();
+
+    let encrypted = Vec::new();
+    let encryptor = write::Decryptor::new(encrypted, cipher, &key, &iv).unwrap();
+    encryptor.finish().unwrap();
+}
+
+#[test]
+fn finish_empty_write_encrypt() {
+    let key: [u8; 128 / 8] = rand::random();
+    let iv: [u8; 128 / 8] = rand::random();
+    let cipher = Cipher::aes_128_cbc();
+
+    let encrypted = Vec::new();
+    let encryptor = write::Encryptor::new(encrypted, cipher, &key, &iv).unwrap();
+    encryptor.finish().unwrap();
+}
+
+#[test]
+fn finish_empty_read_encrypt() {
+    let key: [u8; 128 / 8] = rand::random();
+    let iv: [u8; 128 / 8] = rand::random();
+    let cipher = Cipher::aes_128_cbc();
+
+    let plaintext: &[u8] = b"";
+    let encryptor = read::Encryptor::new(plaintext, cipher, &key, &iv).unwrap();
+    encryptor.finish();
 }

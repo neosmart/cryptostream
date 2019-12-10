@@ -27,10 +27,10 @@ const BUFFER_SIZE: usize = 4096;
 struct Cryptostream<R: Read> {
     reader: R,
     buffer: [u8; BUFFER_SIZE],
+    never_used: bool,
     cipher: Cipher,
     crypter: Crypter,
     finalized: bool,
-    bytes_read: usize,
 }
 
 impl<R: Read> Cryptostream<R> {
@@ -47,10 +47,10 @@ impl<R: Read> Cryptostream<R> {
         Ok(Self {
             reader: reader,
             buffer: [0u8; BUFFER_SIZE],
+            never_used: true,
             cipher: cipher.clone(),
             crypter: crypter,
             finalized: false,
-            bytes_read: 0,
         })
     }
 
@@ -74,59 +74,53 @@ impl<R: Read> Read for Cryptostream<R> {
             block_size.count_ones() == 1,
             "Only algorithms with power-of-two block sizes are supported!"
         );
-        let max_read = BUFFER_SIZE & !(block_size - 1);
-        let mut buffer = &mut self.buffer[0..max_read];
 
-        let mut bytes_read = self.reader.read(&mut buffer)?;
-        // eprintln!("Read {} bytes from underlying stream", bytes_read);
-        let mut eof = bytes_read == 0;
-        while !eof && ((bytes_read & (block_size - 1)) != bytes_read) {
-            // We have read a partial block, which is only allowed if this is the end of the
-            // underlying stream.
-            bytes_read += match self.reader.read(&mut buffer[bytes_read..]) {
+        debug_assert!(
+            buf.len() >= 2 * block_size,
+            "The read buffer must be at least twice the length of the cipher block size!"
+        );
+
+        // Crypter::update() requires the output buffer to be at least `input.len() + block_size`
+        // in length, so we only read as much as we can pass to `update()` in one call, otherwise
+        // we need to preserve buffer contents across calls and implement a circular queue with
+        // unnecessary copying.
+        let mut bytes_read = 0;
+        let max_read = std::cmp::min(buf.len() - block_size, BUFFER_SIZE);
+
+        // Read::read() is required to return zero bytes only if the EOF is reached, so we must
+        // loop over the input source until at least one block has been read and transformed.
+        loop {
+            let mut buffer = &mut self.buffer[bytes_read..max_read];
+            match dbg!(self.reader.read(&mut buffer)) {
                 Ok(0) => {
-                    eof = true;
-                    0
+                    self.finalized = true;
+
+                    // [openssl::symm::Crypter::finalize(..)] will panic if zero bytes have been written to
+                    // the instance before `finalize()` is called. We have to call finalize() if we ever
+                    // wrote to the instance, i.e. called `Crypter::update()`, even if we didn't this
+                    // round.
+                    if self.never_used {
+                        return Ok(0);
+                    } else {
+                        return self
+                            .crypter
+                            .finalize(&mut buf)
+                            .map_err(|e| Error::new(ErrorKind::Other, e));
+                    }
                 }
                 Ok(n) => {
-                    // eprintln!("Read {} bytes from underlying stream", n);
-                    n
+                    self.never_used = false;
+                    bytes_read += n;
+                    match dbg!(self.crypter.update(&buffer[0..n], &mut buf)) {
+                        Ok(0) => continue,
+                        Ok(written) => return Ok(written),
+                        e @ Err(_) => return e.map_err(|e| Error::new(ErrorKind::Other, e)),
+                    }
                 }
-                Err(e) => match e.kind() {
-                    ErrorKind::Interrupted => continue,
-                    // Technically we must be able to guarantee no bytes were read if we return
-                    // with an error, but how can we do that?
-                    _ => return Err(e),
-                },
+                // It is safe to just bubble up ErrorKind::Interrupted as our state is updated each loop.
+                Err(e) => return Err(e),
             };
         }
-
-        let mut bytes_written = 0;
-        if bytes_read != 0 {
-            self.bytes_read += bytes_read;
-
-            let write_bytes = self
-                .crypter
-                .update(&buffer[bytes_written..bytes_read], &mut buf)
-                .map_err(|e| Error::new(ErrorKind::Other, e))?;
-            // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
-            bytes_written += write_bytes;
-        };
-        if eof {
-            self.finalized = true;
-
-            if self.bytes_read > 0 {
-                let write_bytes = self
-                    .crypter
-                    .finalize(&mut buf[bytes_written..])
-                    .map_err(|e| Error::new(ErrorKind::Other, e))?;
-                // eprintln!("Wrote {} bytes to encrypted stream", write_bytes);
-                bytes_written += write_bytes;
-            }
-        }
-
-        // eprintln!("Returning {} bytes encrypted", bytes_written);
-        Ok(bytes_written)
     }
 }
 
