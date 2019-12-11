@@ -8,7 +8,18 @@ class, providing an efficient and easy solution to on-the-fly encryption or decr
 `Read` or `Write` resources. Cryptography is provided via [rust-openssl](https://github.com/sfackler/rust-openssl)
 and is fully configurable.
 
-## Design
+## What is a Cryptostream?
+
+In brief, a
+[Cryptostream](https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.cryptostream)
+is a wrapper around a stream (in rust parlance, a `Read` or `Write` type) that transparently
+encrypts or decrypts the underlying contents. After creating an instance of a `Cryptostream` with
+the cipher, key, and IV specified, bytes written to or read from the Cryptostream are the same as
+the `Read` or `Write` stream it is wrapping, only additionally encrypted or decrypted. It makes
+handling encrypted sources or destinations a breeze, and requires virtually no changes to your
+existing pipeline - it's just a `Read` or `Write`, like any other.
+
+## Crate Design
 
 As rust (for better or for worse) lacks a `Stream` type, `cryptostream` has been implemented in both
 encryption and decryption modes twice, once as a `Read` impl and once as a `Write` impl (design cues
@@ -26,7 +37,7 @@ applications:
 * `cryptostream::write::Encryptor`
 * `cryptostream::write::Decryptor`
 
-## `Read` vs `Write` cryptostreams
+## `Read` vs `Write` Cryptostreams
 
 The difference between the `Read` and `Write` variants of `cryptostream` are perhaps best
 illustrated by example. In both of the following examples, we will be decrypting ciphertext, however
@@ -37,22 +48,30 @@ to obtain the equivalent plaintext in memory to later perform some operation wit
 state:
 
 ```rust
-let src: Vec<u8> =
-    decode("vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdOVC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXvQ6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==").unwrap();
+
+// This is the cipher text, base64-encoded to avoid any whitespace munging. In this
+// contrived example, we are using a binary `Vec<u8>` as the `Read` source containing
+// the encrypted data; in practice it could be a binary file, a network stream, or
+// anything else.
+let src: Vec<u8> = decode(concat!(
+    "vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdO",
+    "VC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXv",
+    "Q6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==",
+))
+.unwrap();
 let key: Vec<_> = decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
 let iv: Vec<_> = decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
 
-// the source can be any object implementing `Read`. In this case, a simple &[u8] slice.
-let mut decryptor = read::Decryptor::new(src.as_slice(),
-                                         Cipher::aes_128_cbc(),
-                                         &key, &iv).unwrap();
+// The source can be anything implementing `Read`. In this case, a simple &[u8] slice.
+let mut decryptor =
+    read::Decryptor::new(src.as_slice(), Cipher::aes_128_cbc(), &key, &iv).unwrap();
 
 let mut decrypted = [0u8; 1024]; // a buffer to decrypt into
 let mut bytes_decrypted = 0;
 
 loop {
-    // Just read from the `Decryptor` as if it were any other `Read` impl.
-    // Decryption is automatic.
+    // Just read from the `Decryptor` as if it were any other `Read` impl,
+    // the decryption takes place automatically.
     let read_count = decryptor.read(&mut decrypted[bytes_decrypted..]).unwrap();
     bytes_decrypted += read_count;
     if read_count == 0 {
@@ -61,33 +80,48 @@ loop {
 }
 
 println!("{}", String::from_utf8_lossy(&decrypted));
+
 ```
 
 Now what about if you want to _write out_ the decrypted contents instead of _read_ them, but still
 wish to perform decryption all the same?
 
 ```rust
-let src: Vec<u8> =
-    decode("vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdOVC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXvQ6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==").unwrap();
+
+// Starting again with the same encrypted bytestream, encoded as base64:
+let src: Vec<u8> = decode(concat!(
+    "vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdO",
+    "VC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXv",
+    "Q6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw=="
+))
+.unwrap();
 let key: Vec<_> = decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
 let iv: Vec<_> = decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
 
-// the destination can be any object implementing `Write`. In this case, a Vec<u8>.
+// The destination can be any object implementing `Write`: in this case, a `Vec<u8>`.
 let mut decrypted = Vec::new();
+
+// When a `cryptostream` is dropped, all buffers are flushed and it is automatically
+// finalized. We can either call `drop()` on the cryptostream or put its usage in a
+// separate scope.
 {
-    let mut decryptor = write::Decryptor::new(&mut decrypted,
-                                              Cipher::aes_128_cbc(),
-                                              &key, &iv).unwrap();
+    let mut decryptor =
+        write::Decryptor::new(&mut decrypted, Cipher::aes_128_cbc(), &key, &iv).unwrap();
 
     let mut bytes_decrypted = 0;
 
     while bytes_decrypted != src.len() {
         // Just write encrypted ciphertext to the `Decryptor` instance as if it were any
-        // other `Write` impl. Decryption is automatic.
+        // other `Write` impl. Decryption takes place automatically.
         let write_count = decryptor.write(&src[bytes_decrypted..]).unwrap();
         bytes_decrypted += write_count;
     }
 }
 
+// The underlying `Write` instance is only guaranteed to contain the complete and
+// finalized contents after the cryptostream is either explicitly finalized with a
+// call to `Cryptostream::finish()` or when it's dropped (either at the end of a scope
+// or via an explicit call to `drop()`, whichever you prefer).
 println!("{}", String::from_utf8_lossy(&decrypted));
+
 ```
