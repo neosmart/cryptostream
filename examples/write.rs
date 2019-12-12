@@ -1,10 +1,6 @@
-extern crate base64;
-extern crate cryptostream;
-extern crate openssl;
-
 use base64::decode;
 use cryptostream::write;
-use openssl::symm::Cipher;
+use cryptostream::Cipher;
 use std::io::Write;
 
 fn main() {

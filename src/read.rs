@@ -6,7 +6,7 @@
 //! from the wrapped/underlying `Read` instance and return the encrypted equivalent (a block at a
 //! time) via `.read(..)` calls.
 
-use bufread;
+use crate::bufread;
 use openssl::error::ErrorStack;
 use openssl::symm::Cipher;
 use std::io::{BufReader, Error, Read};

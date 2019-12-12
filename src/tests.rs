@@ -1,11 +1,8 @@
-extern crate openssl;
-extern crate rand;
-
 use openssl::symm::{Cipher, Crypter, Mode};
 use std::io::prelude::*;
 
-use read;
-use write;
+use crate::read;
+use crate::write;
 
 pub const TEST: &[u8] = b"It was the best of times, it was the worst of times.";
 

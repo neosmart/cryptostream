@@ -10,6 +10,7 @@ readme = "README.md"
 keywords = ["encryption", "decryption", "cryptography", "cryptostream", "openssl"]
 categories = ["cryptography"]
 license = "MIT"
+edition = "2018"
 
 [dependencies]
 openssl = { version = "0.10", features = [ "vendored" ], optional = true }
