@@ -13,12 +13,11 @@ license = "MIT"
 edition = "2018"
 
 [dependencies]
-openssl = { version = "0.10", features = [ "vendored" ], optional = true }
-openssl-sys = { package = "openssl", version = "0.10", optional = true }
+openssl = { version = "0.10" }
 
 [features]
-default = [ "openssl" ]
-system-openssl = [ "openssl-sys" ]
+default = [ "openssl-vendored" ]
+openssl-vendored = [ "openssl/vendored" ]
 
 [dev-dependencies]
 base64 = "0.9"

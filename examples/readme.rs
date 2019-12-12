@@ -1,7 +1,6 @@
 use base64::decode;
 use cryptostream::{read, write};
-// openssl::Cipher is re-exported as cryptostream::Cipher
-use cryptostream::Cipher;
+use openssl::symm::Cipher;
 use std::io::prelude::*;
 
 fn main() {

@@ -1,6 +1,6 @@
 use base64::decode;
 use cryptostream::write;
-use cryptostream::Cipher;
+use openssl::symm::Cipher;
 use std::io::Write;
 
 fn main() {
