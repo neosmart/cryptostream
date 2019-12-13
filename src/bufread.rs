@@ -20,13 +20,76 @@ use openssl::error::ErrorStack;
 use openssl::symm::{Cipher, Crypter, Mode};
 use std::io::{BufRead, Error, ErrorKind, Read};
 
-/// This size is only used for the creation of the internal buffers and has no bearing on the block
-/// size, apart from necessarily being at least as large. 4KB should be enough for everyone, right?
-const BUFFER_SIZE: usize = 4096;
+/// EVP_MAX_BLOCK_LENGTH in OpenSSL is 32 bytes, and we require at least 2*n-1 for the worst case
+/// where we start off with just a byte shy of a block and then read an entire block.
+const EVP_MAX_BLOCK_LENGTH: usize = 32;
+const BUFFER_SIZE: usize = EVP_MAX_BLOCK_LENGTH * 2;
+
+struct Buffer {
+    buffer: [u8; BUFFER_SIZE],
+    length: usize,
+    index: usize,
+}
+
+// Explicitly use a simple stack-allocated struct rather than a heap-allocated vector.
+impl Default for Buffer {
+    fn default() -> Self {
+        Self {
+            buffer: [0u8; BUFFER_SIZE],
+            length: 0,
+            index: 0,
+        }
+    }
+}
+
+impl<'a> Buffer {
+    fn len(&self) -> usize {
+        self.length - self.index
+    }
+
+    fn is_empty(&self) -> bool {
+        self.length == self.index
+    }
+
+    fn fill<F, E>(&mut self, mut read: F) -> Result<usize, E>
+    where
+        F: FnMut(&mut [u8]) -> Result<usize, E>,
+    {
+        let mut write_buf = &mut self.buffer[self.length..];
+        let written = read(&mut write_buf)?;
+        self.length += written;
+        Ok(written)
+    }
+
+    fn reset(&mut self) {
+        self.index = 0;
+        self.length = 0;
+    }
+}
+
+impl Read for Buffer {
+    fn read(&mut self, dst: &mut [u8]) -> std::io::Result<usize> {
+        let len = std::cmp::min(dst.len(), self.len());
+        dst[..len].copy_from_slice(&self.buffer[self.index..][..len]);
+        self.index += len;
+        Ok(len)
+    }
+}
+
+#[test]
+fn zero_len_buffer_read() {
+    let mut b = Buffer::default();
+    let mut temp = Vec::new();
+    match b.read(&mut temp) {
+        Ok(0) => {}
+        _ => panic!("Zero-length read failure!"),
+    }
+}
 
 struct Cryptostream<R: Read> {
     reader: R,
-    buffer: [u8; BUFFER_SIZE],
+    read_buffer: [u8; BUFFER_SIZE],
+    write_buffer: Buffer,
     never_used: bool,
     cipher: Cipher,
     crypter: Crypter,
@@ -46,7 +109,8 @@ impl<R: Read> Cryptostream<R> {
 
         Ok(Self {
             reader: reader,
-            buffer: [0u8; BUFFER_SIZE],
+            read_buffer: [0; BUFFER_SIZE],
+            write_buffer: Default::default(),
             never_used: true,
             cipher: cipher.clone(),
             crypter: crypter,
@@ -61,61 +125,89 @@ impl<R: Read> Cryptostream<R> {
 
 impl<R: Read> Read for Cryptostream<R> {
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Error> {
-        if self.finalized {
-            return Ok(0);
-        }
-
         let block_size = self.cipher.block_size();
-        // We could actually easily support algorithms with non-power-of-two block sizes by simply
-        // using modulo division instead of ANDing with `blocksize - 1`, but in practice all
-        // ciphers worth supporting will have a power-of-two block size and the bitwise AND is much
-        // faster.
         debug_assert!(
             block_size.count_ones() == 1,
             "Only algorithms with power-of-two block sizes are supported!"
         );
 
-        debug_assert!(
-            buf.len() >= 2 * block_size,
-            "The read buffer must be at least twice the length of the cipher block size!"
-        );
-
-        // Crypter::update() requires the output buffer to be at least `input.len() + block_size`
-        // in length, so we only read as much as we can pass to `update()` in one call, otherwise
-        // we need to preserve buffer contents across calls and implement a circular queue with
-        // unnecessary copying.
-        let mut bytes_read = 0;
-        let max_read = std::cmp::min(buf.len() - block_size, BUFFER_SIZE);
+        if !self.write_buffer.is_empty() {
+            // Resume from previously transformed content
+            let drained = self.write_buffer.read(&mut buf)?;
+            eprintln!("Drained {} bytes from overflow", drained);
+            return Ok(drained);
+        }
+        if self.finalized {
+            return Ok(0);
+        }
 
         // Read::read() is required to return zero bytes only if the EOF is reached, so we must
         // loop over the input source until at least one block has been read and transformed.
+        let mut bytes_read = 0;
         loop {
-            let mut buffer = &mut self.buffer[bytes_read..max_read];
-            match self.reader.read(&mut buffer) {
+            let max_read = self.read_buffer.len() - bytes_read - block_size;
+            let mut read_buffer = &mut self.read_buffer[bytes_read..][..max_read];
+            match self.reader.read(&mut read_buffer) {
                 Ok(0) => {
+                    // We have reached the end of the wrapped/underlying stream
                     self.finalized = true;
 
-                    // [openssl::symm::Crypter::finalize(..)] will panic if zero bytes have been written to
-                    // the instance before `finalize()` is called. We have to call finalize() if we ever
-                    // wrote to the instance, i.e. called `Crypter::update()`, even if we didn't this
-                    // round.
-                    if self.never_used {
-                        return Ok(0);
+                    // [openssl::symm::Crypter::finalize(..)] will panic if zero bytes have been
+                    // written to the instance before `finalize()` is called. We have to call
+                    // Crypter::finalize(..) if we ever wrote to the instance.
+                    return if self.never_used {
+                        Ok(0)
+                    } else if !self.write_buffer.is_empty() || buf.len() < bytes_read + block_size {
+                        // The destination buffer is not sufficient for a zero-copy operation
+                        // without scatter-gather.
+                        let write_buffer = &mut self.write_buffer;
+                        let crypter = &mut self.crypter;
+                        let written = write_buffer.fill(|b| crypter.finalize(b))
+                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+
+                        let copied = self.write_buffer.read(buf)?;
+                        eprintln!("Finalized {} of {} bytes with overflow", copied, written);
+
+                        Ok(copied)
                     } else {
-                        return self
-                            .crypter
+                        // We can skip the copy and use the provided buffer directly.
+                        self.crypter
                             .finalize(&mut buf)
-                            .map_err(|e| Error::new(ErrorKind::Other, e));
+                            .map_err(|e| Error::new(ErrorKind::Other, e))
                     }
                 }
                 Ok(n) => {
                     self.never_used = false;
                     bytes_read += n;
-                    match self.crypter.update(&buffer[0..n], &mut buf) {
-                        Ok(0) => continue,
-                        Ok(written) => return Ok(written),
-                        e @ Err(_) => return e.map_err(|e| Error::new(ErrorKind::Other, e)),
-                    }
+
+                    // OpenSSL will panic if we try to read into too small a buffer, so we may need
+                    // to buffer the result locally.
+                    if buf.len() < n + block_size {
+                        let write_buffer = &mut self.write_buffer;
+                        let crypter = &mut self.crypter;
+                        write_buffer.reset();
+                        let bytes_written = write_buffer.fill(|b| crypter.update(&read_buffer[..n], b))
+                            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+
+                        match bytes_written {
+                            0 => continue,
+                            written => {
+                                let copied = self.write_buffer.read(&mut buf)?;
+                                eprintln!(
+                                    "Transformed {} of {} bytes with overflow",
+                                    copied, written
+                                );
+                                return Ok(copied);
+                            }
+                        };
+                    } else {
+                        // Skip the double-buffering and write directly to the source.
+                        match self.crypter.update(&self.read_buffer[..n], &mut buf) {
+                            Ok(0) => continue,
+                            Ok(written) => return Ok(written),
+                            e @ Err(_) => return e.map_err(|e| Error::new(ErrorKind::Other, e)),
+                        };
+                    };
                 }
                 // It is safe to just bubble up ErrorKind::Interrupted as our state is updated each loop.
                 Err(e) => return Err(e),
@@ -147,11 +239,6 @@ impl<R: BufRead> Encryptor<R> {
 
 impl<R: BufRead> Read for Encryptor<R> {
     /// Reads encrypted data out of the underlying plaintext
-    ///
-    /// `buf` must be at least the size of one block or else `read` will return 0 prematurely. This
-    /// routine will read in multiples of block size to avoid needless buffering of data, and so it
-    /// is normal for it to read less than the buffer size if the buffer is not a multiple of the
-    /// block size.
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize, Error> {
         self.inner.read(&mut buf)
     }
