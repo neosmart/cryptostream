@@ -182,13 +182,115 @@ fn finish_empty_write_encrypt() {
     encryptor.finish().unwrap();
 }
 
-#[test]
-fn finish_empty_read_encrypt() {
+fn init_secrets() -> (Cipher, [u8; 128/8], [u8; 128/8]) {
+    let cipher = Cipher::aes_128_cbc();
     let key: [u8; 128 / 8] = rand::random();
     let iv: [u8; 128 / 8] = rand::random();
-    let cipher = Cipher::aes_128_cbc();
+
+    (cipher, key, iv)
+}
+
+#[test]
+fn finish_empty_read_encrypt() {
+    let (cipher, key, iv) = init_secrets();
 
     let plaintext: &[u8] = b"";
     let encryptor = read::Encryptor::new(plaintext, cipher, &key, &iv).unwrap();
     encryptor.finish();
+}
+
+fn encrypt(plaintext: &[u8], cipher: Cipher, key: &[u8], iv: &[u8]) -> Vec<u8> {
+    let mut cryptor = openssl::symm::Crypter::new(cipher, Mode::Encrypt, key, Some(iv))
+        .expect("Failed to create OpenSSL encryptor!");
+    let mut encrypted = Vec::new();
+    encrypted.resize(plaintext.len() + cipher.block_size(), 0);
+    let mut bytes_written = cryptor.update(plaintext, &mut encrypted)
+        .expect("OpenSSL update for encryption failed!");
+    bytes_written += cryptor.finalize(&mut encrypted[bytes_written..])
+        .expect("OpenSSL finalization for encryption failed!");
+    encrypted.truncate(bytes_written);
+    encrypted
+}
+
+fn verify_transform(plaintext: &[u8], ciphertext: &[u8], cipher: Cipher, key: &[u8], iv: &[u8]) {
+    let encrypted = encrypt(plaintext, cipher, &key, &iv);
+    assert_eq!(ciphertext, encrypted.as_slice());
+}
+
+#[test]
+fn read_encrypt_less_than_block() {
+    let (cipher, key, iv) = init_secrets();
+
+    let plaintext: &[u8] = b"one";
+    let mut encryptor = read::Encryptor::new(plaintext, cipher, &key, &iv).unwrap();
+    let mut encrypted = Vec::new();
+
+    match encryptor.read_to_end(&mut encrypted) {
+        Ok(16) => {},
+        _ => panic!("Failed to read encrypted bytes!"),
+    };
+    drop(encryptor);
+
+    // It's OK not to drop the encryptor before verifying since we necessarily read until the
+    // source is exhausted.
+    verify_transform(plaintext, &encrypted, cipher, &key, &iv);
+}
+
+
+#[test]
+fn read_decrypt_less_than_block() {
+    let (cipher, key, iv) = init_secrets();
+
+    let plaintext: &[u8] = b"one";
+    let encrypted = encrypt(plaintext, cipher, &key, &iv);
+    let mut decryptor = read::Encryptor::new(plaintext, cipher, &key, &iv).unwrap();
+    let mut decrypted = Vec::new();
+
+    match decryptor.read_to_end(&mut decrypted) {
+        Ok(16) => {},
+        _ => panic!("Failed to read encrypted bytes!"),
+    };
+
+    // It's OK not to drop the decryptor before verifying since we necessarily read until the
+    // source is exhausted.
+    verify_transform(plaintext, &encrypted, cipher, &key, &iv);
+}
+
+#[test]
+fn write_encrypt_less_than_block() {
+    let (cipher, key, iv) = init_secrets();
+
+    let plaintext: &[u8] = b"hello";
+    let ciphertext = Vec::new();
+    let mut encryptor = write::Encryptor::new(ciphertext, cipher, &key, &iv).unwrap();
+
+    encryptor.write_all(plaintext)
+        .expect("Failed to write all bytes to encryptor!");
+
+    // Here we must ensure the encryptor is flushed/dropped before comparing the results.
+    // Merely dropping the encryptor leaves us unable to access the results, so call
+    // `.finish()` instead.
+    let ciphertext = encryptor.finish()
+        .expect("Failed to finish encryptor!");
+    verify_transform(&plaintext, &ciphertext, cipher, &key, &iv);
+}
+
+#[test]
+fn write_decrypt_less_than_block() {
+    let (cipher, key, iv) = init_secrets();
+
+    let plaintext: &[u8] = b"hello";
+    let encrypted = encrypt(plaintext, cipher, &key, &iv);
+    let decrypted = Vec::new();
+    let mut decryptor = write::Decryptor::new(decrypted, cipher, &key, &iv).unwrap();
+
+    decryptor.write_all(&encrypted)
+        .expect("Failed to write all bytes to decryptor!");
+
+    // Here we must ensure the encryptor is flushed/dropped before comparing the results.
+    // Merely dropping the encryptor leaves us unable to access the results, so call
+    // `.finish()` instead.
+    let decrypted = decryptor.finish()
+        .expect("Failed to finish decryptor!");
+    assert_eq!(plaintext, decrypted.as_slice(), "Mismatch of original and decrypted contents!");
 }
