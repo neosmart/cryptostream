@@ -178,7 +178,10 @@ impl<R: Read> Read for Cryptostream<R> {
                 }
                 Ok(n) => {
                     self.never_used = false;
+                    let old_bytes_read = bytes_read;
                     bytes_read += n;
+
+                    debug_assert!(self.write_buffer.is_empty());
 
                     // OpenSSL will panic if we try to read into too small a buffer, so we may need
                     // to buffer the result locally.
@@ -186,7 +189,7 @@ impl<R: Read> Read for Cryptostream<R> {
                         let write_buffer = &mut self.write_buffer;
                         let crypter = &mut self.crypter;
                         write_buffer.reset();
-                        let bytes_written = write_buffer.fill(|b| crypter.update(&read_buffer[..n], b))
+                        let bytes_written = write_buffer.fill(|b| crypter.update(&read_buffer[old_bytes_read..bytes_read], b))
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
 
                         match bytes_written {
@@ -202,10 +205,10 @@ impl<R: Read> Read for Cryptostream<R> {
                         };
                     } else {
                         // Skip the double-buffering and write directly to the source.
-                        match self.crypter.update(&self.read_buffer[..n], &mut buf) {
+                        match self.crypter.update(&self.read_buffer[old_bytes_read..bytes_read], &mut buf) {
                             Ok(0) => continue,
                             Ok(written) => return Ok(written),
-                            e @ Err(_) => return e.map_err(|e| Error::new(ErrorKind::Other, e)),
+                            Err(e) => return Err(Error::new(ErrorKind::Other, e)),
                         };
                     };
                 }
