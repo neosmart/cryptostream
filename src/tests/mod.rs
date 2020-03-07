@@ -1,6 +1,7 @@
+mod random_read;
+
 use openssl::symm::{Cipher, Crypter, Mode};
 use std::io::prelude::*;
-
 use crate::read;
 use crate::write;
 
