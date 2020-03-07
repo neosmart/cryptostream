@@ -160,12 +160,10 @@ impl<R: Read> Read for Cryptostream<R> {
                         // without scatter-gather.
                         let write_buffer = &mut self.write_buffer;
                         let crypter = &mut self.crypter;
-                        let written = write_buffer.fill(|b| crypter.finalize(b))
+                        write_buffer.fill(|b| crypter.finalize(b))
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
 
-                        let copied = self.write_buffer.read(buf)?;
-
-                        Ok(copied)
+                        self.write_buffer.read(buf)
                     } else {
                         // We can skip the copy and use the provided buffer directly.
                         self.crypter
@@ -194,21 +192,17 @@ impl<R: Read> Read for Cryptostream<R> {
 
                         match bytes_written {
                             0 => continue,
-                            written => {
-                                let copied = self.write_buffer.read(&mut buf)?;
-                                return Ok(copied);
-                            }
+                            _ => return self.write_buffer.read(&mut buf)
                         };
                     } else {
                         // Skip the double-buffering and write directly to the source.
-                        match self.crypter.update(&self.read_buffer[old_bytes_read..bytes_read], &mut buf) {
-                            Ok(0) => continue,
-                            Ok(written) => return Ok(written),
-                            Err(e) => return Err(Error::new(ErrorKind::Other, e)),
+                        match self.crypter.update(&self.read_buffer[old_bytes_read..bytes_read], &mut buf)? {
+                            0 => continue,
+                            written => return Ok(written),
                         };
                     };
                 }
-                // It is safe to just bubble up ErrorKind::Interrupted as our state is updated each loop.
+                // It is safe to just bubble up ErrorKind::Interrupted as our state is persisted/updated each loop.
                 Err(e) => return Err(e),
             };
         }
