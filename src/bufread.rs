@@ -27,8 +27,8 @@ const BUFFER_SIZE: usize = EVP_MAX_BLOCK_LENGTH * 2;
 
 struct Buffer {
     buffer: [u8; BUFFER_SIZE],
-    length: usize,
-    index: usize,
+    write_index: usize,
+    read_index: usize,
 }
 
 // Explicitly use a simple stack-allocated struct rather than a heap-allocated vector.
@@ -36,42 +36,41 @@ impl Default for Buffer {
     fn default() -> Self {
         Self {
             buffer: [0u8; BUFFER_SIZE],
-            length: 0,
-            index: 0,
+            write_index: 0,
+            read_index: 0,
         }
     }
 }
 
 impl<'a> Buffer {
     fn len(&self) -> usize {
-        self.length - self.index
+        self.write_index - self.read_index
     }
 
     fn is_empty(&self) -> bool {
-        self.length == self.index
+        self.write_index == self.read_index
     }
 
     fn fill<F, E>(&mut self, mut read: F) -> Result<usize, E>
     where
         F: FnMut(&mut [u8]) -> Result<usize, E>,
     {
-        let mut write_buf = &mut self.buffer[self.length..];
-        let written = read(&mut write_buf)?;
-        self.length += written;
+        let written = read(&mut self.buffer[self.write_index..])?;
+        self.write_index += written;
         Ok(written)
     }
 
     fn reset(&mut self) {
-        self.index = 0;
-        self.length = 0;
+        self.read_index = 0;
+        self.write_index = 0;
     }
 }
 
 impl Read for Buffer {
     fn read(&mut self, dst: &mut [u8]) -> std::io::Result<usize> {
         let len = std::cmp::min(dst.len(), self.len());
-        dst[..len].copy_from_slice(&self.buffer[self.index..][..len]);
-        self.index += len;
+        dst[..len].copy_from_slice(&self.buffer[self.read_index..][..len]);
+        self.read_index += len;
         Ok(len)
     }
 }
@@ -134,7 +133,6 @@ impl<R: Read> Read for Cryptostream<R> {
         if !self.write_buffer.is_empty() {
             // Resume from previously transformed content
             let drained = self.write_buffer.read(&mut buf)?;
-            eprintln!("Drained {} bytes from overflow", drained);
             return Ok(drained);
         }
         if self.finalized {
@@ -166,7 +164,6 @@ impl<R: Read> Read for Cryptostream<R> {
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
 
                         let copied = self.write_buffer.read(buf)?;
-                        eprintln!("Finalized {} of {} bytes with overflow", copied, written);
 
                         Ok(copied)
                     } else {
@@ -188,6 +185,9 @@ impl<R: Read> Read for Cryptostream<R> {
                     if buf.len() < n + block_size {
                         let write_buffer = &mut self.write_buffer;
                         let crypter = &mut self.crypter;
+                        // The write buffer reset here is not to clear any content (which must have
+                        // necessarily been read by this point) but rather only to move the write
+                        // cursor to the start of the buffer.
                         write_buffer.reset();
                         let bytes_written = write_buffer.fill(|b| crypter.update(&read_buffer[old_bytes_read..bytes_read], b))
                             .map_err(|e| Error::new(ErrorKind::Other, e))?;
@@ -196,10 +196,6 @@ impl<R: Read> Read for Cryptostream<R> {
                             0 => continue,
                             written => {
                                 let copied = self.write_buffer.read(&mut buf)?;
-                                eprintln!(
-                                    "Transformed {} of {} bytes with overflow",
-                                    copied, written
-                                );
                                 return Ok(copied);
                             }
                         };
