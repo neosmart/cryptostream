@@ -1,4 +1,5 @@
 mod random_read;
+mod issue_9;
 
 use openssl::symm::{Cipher, Crypter, Mode};
 use std::io::prelude::*;
