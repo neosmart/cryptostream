@@ -1,13 +1,13 @@
 [package]
 name = "cryptostream"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Mahmoud Al-Qudsi <mqudsi@neosmart.net>",
 		"NeoSmart Technologies <https://neosmart.net/>"]
 description = "Transparent encryption and decryption for Read and Write streams"
 homepage = "https://github.com/neosmart/cryptostream"
 repository = "https://github.com/neosmart/cryptostream"
 readme = "README.md"
-keywords = ["encryption", "decryption", "cryptography", "cryptostream", "openssl"]
+keywords = ["encryption", "decryption", "cryptography", "cryptostream", "aes"]
 categories = ["cryptography"]
 license = "MIT"
 edition = "2018"
