@@ -78,7 +78,7 @@ fn large_buffer_encrypt_decrypt() {
     // Create a large source file
     let start = Instant::now();
     let src_path = Path::new("issue_9.src");
-    let size = Size::Mebibytes(10);
+    let size = Size::from_mib(10);
     create_rand_file(&src_path, size.bytes() as usize);
     eprintln!("{} source file generated in {:?}", size, start.elapsed());
 

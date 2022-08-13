@@ -13,13 +13,13 @@ license = "MIT"
 edition = "2018"
 
 [dependencies]
-openssl = { version = "0.10" }
+openssl = "0.10.41"
 
 [features]
 default = [ "openssl-vendored" ]
 openssl-vendored = [ "openssl/vendored" ]
 
 [dev-dependencies]
-base64 = "0.11"
+base64 = "0.13.0"
 rand = { version = "0.8.5", features = [ "min_const_gen" ] }
-size = "0.1.2"
+size = "0.4.0"
