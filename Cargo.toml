@@ -16,7 +16,7 @@ edition = "2018"
 openssl = "0.10.41"
 
 [features]
-default = [ "openssl-vendored" ]
+# default = [ "openssl-vendored" ]
 openssl-vendored = [ "openssl/vendored" ]
 
 [dev-dependencies]
