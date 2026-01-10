@@ -1,10 +1,10 @@
-mod random_read;
 mod issue_9;
+mod random_read;
 
-use openssl::symm::{Cipher, Crypter, Mode};
-use std::io::prelude::*;
 use crate::read;
 use crate::write;
+use openssl::symm::{Cipher, Crypter, Mode};
+use std::io::prelude::*;
 
 pub const TEST: &[u8] = b"It was the best of times, it was the worst of times.";
 
@@ -184,7 +184,7 @@ fn finish_empty_write_encrypt() {
     encryptor.finish().unwrap();
 }
 
-fn init_secrets() -> (Cipher, [u8; 128/8], [u8; 128/8]) {
+fn init_secrets() -> (Cipher, [u8; 128 / 8], [u8; 128 / 8]) {
     let cipher = Cipher::aes_128_cbc();
     let key: [u8; 128 / 8] = rand::random();
     let iv: [u8; 128 / 8] = rand::random();
@@ -206,9 +206,11 @@ fn encrypt(plaintext: &[u8], cipher: Cipher, key: &[u8], iv: &[u8]) -> Vec<u8> {
         .expect("Failed to create OpenSSL encryptor!");
     let mut encrypted = Vec::new();
     encrypted.resize(plaintext.len() + cipher.block_size(), 0);
-    let mut bytes_written = cryptor.update(plaintext, &mut encrypted)
+    let mut bytes_written = cryptor
+        .update(plaintext, &mut encrypted)
         .expect("OpenSSL update for encryption failed!");
-    bytes_written += cryptor.finalize(&mut encrypted[bytes_written..])
+    bytes_written += cryptor
+        .finalize(&mut encrypted[bytes_written..])
         .expect("OpenSSL finalization for encryption failed!");
     encrypted.truncate(bytes_written);
     encrypted
@@ -228,7 +230,7 @@ fn read_encrypt_less_than_block() {
     let mut encrypted = Vec::new();
 
     match encryptor.read_to_end(&mut encrypted) {
-        Ok(16) => {},
+        Ok(16) => {}
         _ => panic!("Failed to read encrypted bytes!"),
     };
     drop(encryptor);
@@ -237,7 +239,6 @@ fn read_encrypt_less_than_block() {
     // source is exhausted.
     verify_transform(plaintext, &encrypted, cipher, &key, &iv);
 }
-
 
 #[test]
 fn read_decrypt_less_than_block() {
@@ -249,7 +250,7 @@ fn read_decrypt_less_than_block() {
     let mut decrypted = Vec::new();
 
     match decryptor.read_to_end(&mut decrypted) {
-        Ok(16) => {},
+        Ok(16) => {}
         _ => panic!("Failed to read encrypted bytes!"),
     };
 
@@ -266,14 +267,14 @@ fn write_encrypt_less_than_block() {
     let ciphertext = Vec::new();
     let mut encryptor = write::Encryptor::new(ciphertext, cipher, &key, &iv).unwrap();
 
-    encryptor.write_all(plaintext)
+    encryptor
+        .write_all(plaintext)
         .expect("Failed to write all bytes to encryptor!");
 
     // Here we must ensure the encryptor is flushed/dropped before comparing the results.
     // Merely dropping the encryptor leaves us unable to access the results, so call
     // `.finish()` instead.
-    let ciphertext = encryptor.finish()
-        .expect("Failed to finish encryptor!");
+    let ciphertext = encryptor.finish().expect("Failed to finish encryptor!");
     verify_transform(&plaintext, &ciphertext, cipher, &key, &iv);
 }
 
@@ -286,13 +287,17 @@ fn write_decrypt_less_than_block() {
     let decrypted = Vec::new();
     let mut decryptor = write::Decryptor::new(decrypted, cipher, &key, &iv).unwrap();
 
-    decryptor.write_all(&encrypted)
+    decryptor
+        .write_all(&encrypted)
         .expect("Failed to write all bytes to decryptor!");
 
     // Here we must ensure the encryptor is flushed/dropped before comparing the results.
     // Merely dropping the encryptor leaves us unable to access the results, so call
     // `.finish()` instead.
-    let decrypted = decryptor.finish()
-        .expect("Failed to finish decryptor!");
-    assert_eq!(plaintext, decrypted.as_slice(), "Mismatch of original and decrypted contents!");
+    let decrypted = decryptor.finish().expect("Failed to finish decryptor!");
+    assert_eq!(
+        plaintext,
+        decrypted.as_slice(),
+        "Mismatch of original and decrypted contents!"
+    );
 }

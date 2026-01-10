@@ -5,8 +5,8 @@
 
 use crate::bufread;
 use openssl::symm::{Cipher, Crypter, Mode};
-use std::io::{BufReader, Read};
 use std::io;
+use std::io::{BufReader, Read};
 
 struct RandomRead<R>
 where
