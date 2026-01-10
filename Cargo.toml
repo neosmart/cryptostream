@@ -1,6 +1,6 @@
 [package]
 name = "cryptostream"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Mahmoud Al-Qudsi <mqudsi@neosmart.net>",
 		"NeoSmart Technologies <https://neosmart.net/>"]
 description = "Transparent encryption and decryption for Read and Write streams"
