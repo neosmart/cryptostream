@@ -20,7 +20,7 @@ impl<R: Read> RandomRead<R> {
     pub fn new(inner: R) -> Self {
         RandomRead {
             inner,
-            rng: rand::thread_rng(),
+            rng: rand::rng(),
         }
     }
 }
@@ -32,7 +32,8 @@ impl<R: Read> Read for RandomRead<R> {
         let bufsize: usize = if buf.len() <= 5 {
             buf.len()
         } else {
-            std::cmp::max(self.rng.gen::<usize>() % buf.len(), 5)
+            let random = self.rng.random_range(0..buf.len());
+            std::cmp::max(random, 5)
         };
 
         self.inner.read(&mut buf[..bufsize])

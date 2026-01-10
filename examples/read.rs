@@ -1,13 +1,13 @@
-use base64::decode;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use cryptostream::read;
 use openssl::symm::Cipher;
 use std::io::Read;
 
 fn main() {
     let src: Vec<u8> =
-        decode("vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdOVC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXvQ6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==").unwrap();
-    let key: Vec<_> = decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
-    let iv: Vec<_> = decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
+        BASE64_STANDARD.decode("vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdOVC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXvQ6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==").unwrap();
+    let key: Vec<_> = BASE64_STANDARD.decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
+    let iv: Vec<_> = BASE64_STANDARD.decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
 
     // the source can be any object implementing `Read`. In this case, a simple &[u8] slice.
     let mut decryptor =

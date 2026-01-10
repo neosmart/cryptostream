@@ -1,4 +1,4 @@
-use base64::decode;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use cryptostream::{read, write};
 use openssl::symm::Cipher;
 use std::io::prelude::*;
@@ -13,14 +13,14 @@ fn f1() {
     // contrived example, we are using a binary `Vec<u8>` as the `Read` source containing
     // the encrypted data; in practice it could be a binary file, a network stream, or
     // anything else.
-    let src: Vec<u8> = decode(concat!(
+    let src: Vec<u8> = BASE64_STANDARD.decode(concat!(
         "vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdO",
         "VC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXv",
         "Q6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw==",
     ))
     .unwrap();
-    let key: Vec<_> = decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
-    let iv: Vec<_> = decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
+    let key: Vec<_> = BASE64_STANDARD.decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
+    let iv: Vec<_> = BASE64_STANDARD.decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
 
     // The source can be anything implementing `Read`. In this case, a simple &[u8] slice.
     let mut decryptor =
@@ -44,14 +44,14 @@ fn f1() {
 
 fn f2() {
     // Starting again with the same encrypted bytestream, encoded as base64:
-    let src: Vec<u8> = decode(concat!(
+    let src: Vec<u8> = BASE64_STANDARD.decode(concat!(
         "vuU+0SXFWQLu8vl/o1WzmPCmf7x/O6ToGQ162Aq2CHxcnc/ax/Q8nTbRlNn0OSPrFuE3yDdO",
         "VC35RmwtUIlxKIkWbnxJpRF5yRJvVByQgWX1qLW8DfMjRp7gVaFNv4qr7G65M6hbSx6hGJXv",
         "Q6s1GiFwi91q0V17DI79yVrINHCXdBnUOqeLGfJ05Edu+39EQNYn4dky7VdgTP2VYZE7Vw=="
     ))
     .unwrap();
-    let key: Vec<_> = decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
-    let iv: Vec<_> = decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
+    let key: Vec<_> = BASE64_STANDARD.decode("kjtbxCPw3XPFThb3mKmzfg==").unwrap();
+    let iv: Vec<_> = BASE64_STANDARD.decode("dB0Ej+7zWZWTS5JUCldWMg==").unwrap();
 
     // The destination can be any object implementing `Write`: in this case, a `Vec<u8>`.
     let mut decrypted = Vec::new();

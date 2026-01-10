@@ -26,7 +26,7 @@ use std::time::Instant;
 fn create_rand_file(path: &Path, size: usize) {
     let mut buffer = [0u8; 1024];
     let mut remainder = size as usize;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut dst = File::options()
         .create(true)
         .write(true)
@@ -35,7 +35,7 @@ fn create_rand_file(path: &Path, size: usize) {
         .unwrap();
 
     while remainder > 0 {
-        buffer.try_fill(&mut rng).unwrap();
+        buffer.fill(&mut rng);
         let write_count = remainder.min(buffer.len());
         dst.write_all(&buffer[..write_count]).unwrap();
         remainder = remainder.checked_sub(write_count).unwrap();
@@ -82,11 +82,11 @@ fn large_buffer_encrypt_decrypt() {
     create_rand_file(&src_path, size.bytes() as usize);
     eprintln!("{} source file generated in {:?}", size, start.elapsed());
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut key = [0u8; 16];
-    key.try_fill(&mut rng);
+    key.fill(&mut rng);
     let mut iv = [0u8; 16];
-    iv.try_fill(&mut rng);
+    iv.fill(&mut rng);
 
     // Encrypt directly to the destination by reading from source and writing to a write::Encryptor
     let start = Instant::now();
